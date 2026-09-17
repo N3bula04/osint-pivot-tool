@@ -250,6 +250,10 @@ def rate(link: Link, seed: str) -> Link:
             conf = "High"
             reason = ("Authoritative DNS answer ties the domain directly to this IP. "
                       "Check for bulk hosting before pivoting (RDAP in Stage 3).")
+            if link.meta.get("seed_owned_host") and link.meta.get("outside_seed_ips"):
+                reason = ("A host under the seed's own domain resolves to a non-CDN IP the seed itself does not use; "
+                          "this is often the real origin server behind a CDN. Strong pivot; confirm with RDAP/PTR.")
+                flags.append("possible_origin_ip")
 
     elif lt == "dns_ptr":
         # source_entity is the IP, related_entity is the hostname from rDNS

@@ -481,13 +481,31 @@ def collect_shared_ips(result: RunResult, cache: Cache, names: List[str], namese
     if skipped:
         log("IP pivot budget", "empty", f"{skipped} discovered name(s) not resolved (raise --max-resolve to include them)")
 
+    origin_candidates: List[str] = []
     for name in todo:
+        own = registrable_domain(name) == seed_reg
         for rtype, ltype in (("A", "dns_a"), ("AAAA", "dns_aaaa")):
             status, answers, detail = dns_query(resolver, cache, name, rtype)
             log(f"{name} {rtype}", status, detail)
             for ip in answers:
                 ip_owners[ip].add(name)
-                result.links.append(Link(name, ip, ltype, f"{name} {rtype} -> {ip}", DNS_SOURCE_LABEL, ts))
+                link = Link(name, ip, ltype, f"{name} {rtype} -> {ip}", DNS_SOURCE_LABEL, ts,
+                            meta={"seed_owned_host": own, "outside_seed_ips": ip not in seed_ips})
+                result.links.append(link)
+                if own and ip not in seed_ips:
+                    origin_candidates.append(f"{name} -> {ip}")
+                    # Reverse DNS on a seed-owned host's IP often names the real hosting provider.
+                    try:
+                        rev_name = str(dns.reversename.from_address(ip))
+                    except Exception:
+                        continue
+                    pstatus, panswers, pdetail = dns_query(resolver, cache, rev_name, "PTR")
+                    log(f"{ip} PTR", pstatus, pdetail)
+                    result.records[f"{ip} PTR"] = panswers
+                    for host in panswers:
+                        host = host.rstrip(".").lower()
+                        result.links.append(Link(ip, host, "dns_ptr", f"{ip} PTR -> {host}  ({rev_name})",
+                                                 DNS_SOURCE_LABEL, ts))
 
     # Which non-seed-owned names landed on one of the seed's IPs?
     found = 0
@@ -503,6 +521,10 @@ def collect_shared_ips(result: RunResult, cache: Cache, names: List[str], namese
         f"- Seed IPs: {len(seed_ips)}",
         f"- Other domains sharing an IP with the seed: {found}",
     ]
+    if origin_candidates:
+        result.sections["IP pivot"].append(
+            "- **Seed-owned hosts on IPs outside the seed's own records** (possible origin infrastructure behind a CDN): "
+            + "; ".join(origin_candidates))
 
 
 # ---------------------------------------------------------------------------

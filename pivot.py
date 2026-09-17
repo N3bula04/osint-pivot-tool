@@ -20,7 +20,7 @@ import sys
 
 from collectors import Cache, collect_ct, collect_dns, collect_rdap, collect_shared_ips, now_iso
 from models import RunResult
-from rating import confidence_counts, rate_all
+from rating import confidence_counts, rate_all, same_owner
 from report import write_reports
 
 TOOL_VERSION = "0.3.0 (Stage 3: DNS + crt.sh + RDAP)"
@@ -94,6 +94,12 @@ def main(argv=None) -> int:
               else f"[*] Loading certificate transparency data from {args.ct_file}...")
         subdomains, related = collect_ct(result, cache, ct_file=args.ct_file, timeout=args.ct_timeout)
         discovered = subdomains | related
+
+    # Seed-owned mail and name servers are worth resolving too: they often sit
+    # outside the CDN and expose the real hosting provider.
+    for l in result.links:
+        if l.link_type in ("dns_mx", "dns_ns") and same_owner(l.related_entity, seed):
+            discovered.add(l.related_entity)
 
     if args.max_resolve > 0 and discovered:
         print(f"[*] IP pivot: resolving up to {args.max_resolve} of {len(discovered)} discovered names...")

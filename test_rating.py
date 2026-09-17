@@ -125,5 +125,21 @@ results.append(check("A on bulk-hosting IP downgraded to Medium", a_by_ip["35.19
 results.append(check("A on dedicated IP stays High", a_by_ip["192.0.2.10"].confidence, "High"))
 results.append(check("privacy-proxy email -> Low", rate(mk("rdap_registrant_email", "abc123@withheldforprivacy.com"), SEED).confidence, "Low"))
 
+# ---- Origin-IP hint: a seed-owned host on a non-CDN IP the seed does not use ----
+tmp = pathlib.Path(tempfile.mkdtemp())
+cache = Cache(tmp, enabled=True)
+cache.put("dns", "mail.example.co.uk:A", {"status": "ok", "answers": ["198.51.100.7"]})
+cache.put("dns", "mail.example.co.uk:AAAA", {"status": "empty", "answers": []})
+cache.put("dns", "7.100.51.198.in-addr.arpa:PTR", {"status": "ok", "answers": ["srv1.some-hoster.example."]})
+rr = RunResult(seed="example.co.uk", started="2026-01-01T00:00:00+00:00")
+rr.links.append(mk("dns_a", "104.16.44.99"))
+collect_shared_ips(rr, cache, ["mail.example.co.uk"], None, 2.0, 30)
+rate_all(rr.links, SEED)
+mail_a = next(l for l in rr.links if l.source_entity == "mail.example.co.uk" and l.link_type == "dns_a")
+results.append(check("origin candidate flagged", "possible_origin_ip" in mail_a.flags, True))
+results.append(check("origin candidate -> High", mail_a.confidence, "High"))
+results.append(check("origin IP gets PTR link", any(l.link_type == "dns_ptr" and l.source_entity == "198.51.100.7" for l in rr.links), True))
+results.append(check("origin noted in IP pivot section", any("mail.example.co.uk -> 198.51.100.7" in x for x in rr.sections["IP pivot"]), True))
+
 print(f"\n{sum(results)}/{len(results)} checks passed")
 raise SystemExit(0 if all(results) else 1)
