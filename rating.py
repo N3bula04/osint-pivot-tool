@@ -304,6 +304,38 @@ def rate(link: Link, seed: str) -> Link:
             conf = "Medium"
             reason = "CNAME points to a third-party host; usually a SaaS or CDN customer relationship. Verify."
 
+    elif lt == "ct_subdomain":
+        conf = "High"
+        reason = "A CA issued a certificate for this name under the seed domain; the requester proved control of it."
+        if link.meta.get("expired"):
+            reason += " Certificate has expired, so the name may no longer be in use."
+            flags.append("expired_certificate")
+
+    elif lt == "ct_shared_certificate":
+        san_count = int(link.meta.get("san_count", 0))
+        if link.meta.get("is_bulk"):
+            conf = "Low"
+            reason = (f"Certificate carries {san_count} names and looks CDN/hosting-managed; such certificates "
+                      "bundle unrelated customers together.")
+            flags.append("shared_bulk_certificate")
+        elif san_count > 20:
+            conf = "Medium"
+            reason = (f"Certificate carries {san_count} names; large SAN lists are often a hosting provider's "
+                      "multi-tenant certificate. Verify the requester.")
+            flags.append("large_san_list")
+        else:
+            conf = "High"
+            reason = ("Both names sit on the same certificate; the requester proved control of both at issuance "
+                      "(CA domain validation).")
+        if link.meta.get("expired"):
+            reason += " Certificate has expired, so the relationship may be historical."
+            flags.append("expired_certificate")
+
+    elif lt == "shared_ip":
+        # meta["ip_flags"] is filled by rate_all once IP links have been rated
+        conf = "High"
+        reason = "Both domains resolve to the same IP address right now."
+
     link.confidence = conf
     link.reason = reason
     link.flags = flags
@@ -327,6 +359,27 @@ def rate_all(links: List[Link], seed: str) -> List[Link]:
             l.confidence = "Medium"
             l.reason = ("Authoritative DNS answer, but reverse DNS shows a cloud/hosting provider IP; "
                         "likely dedicated today, yet cloud IPs are reassigned often. Verify before pivoting.")
+            l.flags.append("cloud_hosted_ip")
+
+    # Cross-link rule 2: a shared-IP link is only as strong as the IP itself.
+    # If the seed's IP is a CDN or cloud address, sharing it means little.
+    ip_rating = {}
+    for l in links:
+        if l.link_type in ("dns_a", "dns_aaaa") and l.source_entity == seed:
+            ip_rating[l.related_entity] = (l.confidence, l.flags)
+    for l in links:
+        if l.link_type != "shared_ip":
+            continue
+        ip = l.evidence.split("-> ", 1)[1].split(";")[0].strip() if "-> " in l.evidence else ""
+        conf, flags = ip_rating.get(ip, ("High", []))
+        if "shared_cdn" in flags:
+            l.confidence = "Low"
+            l.reason = "Both domains resolve to the same CDN anycast IP; thousands of unrelated sites share it."
+            l.flags.append("shared_cdn")
+        elif "cloud_hosted_ip" in flags:
+            l.confidence = "Medium"
+            l.reason = ("Both domains resolve to the same cloud-provider IP; probably one tenant today, "
+                        "but shared load balancers and IP reuse are common. Verify.")
             l.flags.append("cloud_hosted_ip")
     return links
 

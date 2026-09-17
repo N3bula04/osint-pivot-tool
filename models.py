@@ -26,6 +26,7 @@ class Link:
     confidence: str = ""  # High / Medium / Low
     reason: str = ""      # one-line justification for the confidence rating
     flags: List[str] = field(default_factory=list)  # e.g. ["shared_cdn"]
+    meta: Dict[str, object] = field(default_factory=dict)  # extra facts rating.py may use
 
 
 @dataclass
@@ -46,10 +47,12 @@ class RunResult:
     seed: str
     started: str
     finished: str = ""
-    stage: str = "Stage 1 - DNS only"
+    stage: str = "Stage 2 - DNS + certificate transparency"
     links: List[Link] = field(default_factory=list)
     log: List[LogEntry] = field(default_factory=list)
     # Raw records grouped for display: {"example.com A": ["1.2.3.4", ...]}
     records: Dict[str, List[str]] = field(default_factory=dict)
+    # Free-form per-source summaries for the report: {"Certificate transparency": ["line", ...]}
+    sections: Dict[str, List[str]] = field(default_factory=dict)
     cache_hits: int = 0
     cache_misses: int = 0

@@ -5,8 +5,11 @@ Usage:
     python pivot.py example.com
     python pivot.py example.com --refresh          # ignore cache, re-query
     python pivot.py example.com --resolver 1.1.1.1 # use a specific recursive resolver
+    python pivot.py example.com --ct-file saved.json  # use a crt.sh JSON you downloaded
 
-Stage 1: DNS only (A, AAAA, MX, NS, TXT, DMARC TXT, plus reverse DNS on each IP).
+Stage 1: DNS (A, AAAA, MX, NS, TXT, DMARC TXT, plus reverse DNS on each IP).
+Stage 2: certificate transparency via crt.sh, then a capped resolve of discovered
+         names to find domains sharing an IP with the seed.
 """
 
 import argparse
@@ -14,12 +17,12 @@ import pathlib
 import re
 import sys
 
-from collectors import Cache, collect_dns, now_iso
+from collectors import Cache, collect_ct, collect_dns, collect_shared_ips, now_iso
 from models import RunResult
 from rating import confidence_counts, rate_all
 from report import write_reports
 
-TOOL_VERSION = "0.1.0 (Stage 1: DNS)"
+TOOL_VERSION = "0.2.0 (Stage 2: DNS + crt.sh)"
 
 _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z0-9-]{2,63}$"
@@ -54,6 +57,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--resolver", metavar="IP", help="recursive DNS resolver to use instead of the system default, e.g. 1.1.1.1")
     p.add_argument("--timeout", type=float, default=5.0, help="per-query timeout in seconds (default: 5)")
     p.add_argument("--no-ptr", action="store_true", help="skip reverse DNS lookups on discovered IPs")
+    p.add_argument("--skip-ct", action="store_true", help="skip certificate transparency (crt.sh)")
+    p.add_argument("--ct-file", metavar="JSON", help="read crt.sh results from a saved JSON file instead of the network")
+    p.add_argument("--ct-timeout", type=float, default=60.0, help="crt.sh request timeout in seconds (default: 60; crt.sh can be slow)")
+    p.add_argument("--max-resolve", type=int, default=30, help="max discovered names to resolve for the IP pivot (default: 30; 0 disables)")
     p.add_argument("--version", action="version", version=f"%(prog)s {TOOL_VERSION}")
     return p.parse_args(argv)
 
@@ -74,6 +81,19 @@ def main(argv=None) -> int:
 
     print("[*] Collecting DNS records (passive, via recursive resolver)...")
     collect_dns(result, cache, nameserver=args.resolver, timeout=args.timeout, do_ptr=not args.no_ptr)
+
+    discovered = set()
+    if args.skip_ct:
+        result.sections["Certificate transparency"] = ["Skipped (--skip-ct)."]
+    else:
+        print("[*] Querying certificate transparency (crt.sh)..." if not args.ct_file
+              else f"[*] Loading certificate transparency data from {args.ct_file}...")
+        subdomains, related = collect_ct(result, cache, ct_file=args.ct_file, timeout=args.ct_timeout)
+        discovered = subdomains | related
+
+    if args.max_resolve > 0 and discovered:
+        print(f"[*] IP pivot: resolving up to {args.max_resolve} of {len(discovered)} discovered names...")
+        collect_shared_ips(result, cache, sorted(discovered), args.resolver, args.timeout, args.max_resolve)
 
     rate_all(result.links, seed)
     result.finished = now_iso()

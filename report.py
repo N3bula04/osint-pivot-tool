@@ -67,7 +67,12 @@ def write_markdown(result: RunResult, path: pathlib.Path, csv_name: str) -> None
     out.append(f"| Sources failed | {len(failed)} |")
     out.append(f"| Queries with no data | {len(empty)} |\n")
 
-    out.append("## Raw DNS records observed\n")
+    for title, lines in result.sections.items():
+        out.append(f"## {title}\n")
+        out.extend(lines)
+        out.append("")
+
+    out.append("## Raw records observed\n")
     if any(result.records.values()):
         out.append("| Query | Answer |")
         out.append("|---|---|")
