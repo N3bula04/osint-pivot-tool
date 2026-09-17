@@ -24,6 +24,20 @@ visible. The tool never attributes activity to a named actor.
 
 You need Python 3.9 or newer.
 
+### Fastest way (no git needed)
+
+1. Download the tool as a ZIP: https://github.com/N3bula04/osint-pivot-tool/archive/refs/heads/claude/stoic-hawking-n2hlmg.zip
+2. Unzip it. You get a folder called `osint-pivot-tool-claude-stoic-hawking-n2hlmg`. Rename it to `osint-pivot-tool` if you like.
+3. **Windows:** double-click `setup.bat`. **Mac:** open Terminal, type `bash ` (with a space), drag `setup.sh` into the window, press Enter.
+4. Wait for `49/49 checks passed`.
+5. Run a report from a terminal opened in that folder:
+   - Windows: `.\run.bat example.com`
+   - Mac: `bash run.sh example.com`
+
+The `run` script uses the private environment automatically, so you never need to activate anything.
+
+### Manual way (git)
+
 ### macOS
 
 ```bash
