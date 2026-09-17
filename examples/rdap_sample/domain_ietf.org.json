@@ -1,0 +1,38 @@
+{
+  "objectClassName": "domain",
+  "handle": "D2345678-LROR",
+  "ldhName": "IETF.ORG",
+  "status": ["client delete prohibited", "client transfer prohibited", "client update prohibited"],
+  "secureDNS": {"delegationSigned": true},
+  "nameservers": [
+    {"objectClassName": "nameserver", "ldhName": "JILL.NS.CLOUDFLARE.COM"},
+    {"objectClassName": "nameserver", "ldhName": "KEN.NS.CLOUDFLARE.COM"}
+  ],
+  "events": [
+    {"eventAction": "registration", "eventDate": "1995-03-11T05:00:00Z"},
+    {"eventAction": "expiration", "eventDate": "2027-03-12T04:00:00Z"},
+    {"eventAction": "last changed", "eventDate": "2025-02-10T12:00:00Z"}
+  ],
+  "entities": [
+    {
+      "objectClassName": "entity", "handle": "1234", "roles": ["registrar"],
+      "publicIds": [{"type": "IANA Registrar ID", "identifier": "1234"}],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Sample Registrar LLC"]]],
+      "entities": [
+        {"objectClassName": "entity", "roles": ["abuse"],
+         "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Abuse Desk"], ["email", {}, "text", "abuse@sample-registrar.example"]]]}
+      ]
+    },
+    {
+      "objectClassName": "entity", "handle": "C9876543-LROR", "roles": ["registrant"],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "REDACTED FOR PRIVACY"],
+                               ["org", {}, "text", "IETF Administration LLC"],
+                               ["adr", {"cc": "US"}, "text", ["", "", "", "", "", "", "US"]]]]
+    },
+    {
+      "objectClassName": "entity", "handle": "C9876544-LROR", "roles": ["technical"],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Hostmaster"],
+                               ["email", {}, "text", "hostmaster@sample-msp.example"]]]
+    }
+  ]
+}

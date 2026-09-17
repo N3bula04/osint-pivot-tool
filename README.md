@@ -16,7 +16,7 @@ infrastructure (CDNs, managed DNS, mail providers, cloud hosting) is flagged
 and downgraded. Sources that fail or return nothing are logged so gaps are
 visible. The tool never attributes activity to a named actor.
 
-**Current version: Stage 2 (DNS + certificate transparency).** RDAP comes in Stage 3.
+**Current version: Stage 3 (DNS + certificate transparency + RDAP).** This completes the version 1 scope.
 
 ---
 
@@ -82,6 +82,9 @@ Useful options:
 | `--ct-file FILE.json` | Read crt.sh results from a JSON file you saved, instead of the network. |
 | `--ct-timeout 90` | crt.sh request timeout in seconds (default 60; crt.sh is often slow). |
 | `--max-resolve 50` | How many discovered names to resolve for the IP pivot (default 30; 0 disables). |
+| `--skip-rdap` | Skip RDAP registration lookups. |
+| `--rdap-dir DIR` | Read RDAP JSON from saved files instead of the network (see below). |
+| `--rdap-timeout 45` | RDAP request timeout in seconds (default 30). |
 | `-o DIR` | Write reports somewhere other than `reports/`. |
 
 Run `python pivot.py --help` for the full list.
@@ -147,6 +150,37 @@ the JSON once in a browser and feed it to the tool:
 format, used by the self-check. The certificate IDs in it are made up; do
 not cite them.
 
+## What Stage 3 adds: registration data via RDAP
+
+RDAP (Registration Data Access Protocol) is the structured successor to
+WHOIS, served by registries and the five regional internet registries. The
+tool asks `rdap.org`, a public redirector that forwards each query to the
+right authoritative server, for the seed domain and for the netblock behind
+each of the seed's IPs (at most 8). If rdap.org is down, it falls back to
+IANA's bootstrap files and queries the authoritative server directly. It
+pauses one second between requests and caches every answer for 24 hours.
+
+| Link type | What it means |
+|---|---|
+| `rdap_registrar` | Which registrar sponsors the domain. Always Low on its own; useful only in combination. |
+| `rdap_nameserver` | The registry's view of the delegation. Rated like DNS NS. The report notes if it disagrees with what DNS answers. |
+| `rdap_registrant_org`, `rdap_registrant_email`, `rdap_technical_email`, ... | Unredacted contact details. An email at a different domain is a classic pivot (High); privacy-proxy addresses are Low. |
+| `rdap_netblock` | The IP's netblock and its holder. Hosting/cloud holders are Low and trigger a downgrade of the domain-to-IP link. A holder matching the seed's registrant is High. |
+
+The "Registration data (RDAP)" section of the report also shows registration,
+last-changed and expiry dates, domain age (with a warning under 90 days),
+status codes, DNSSEC, and the registry's nameservers.
+
+### Working from saved RDAP files
+
+Use `--rdap-dir DIR` to run without the network. The tool looks for
+`DIR/domain_<seed>.json` and `DIR/ip_<ip>.json`, with colons in IPv6
+addresses replaced by hyphens (Windows cannot write colons in filenames).
+Save them in a browser from `https://rdap.org/domain/example.com` and
+`https://rdap.org/ip/93.184.216.34`. `examples/rdap_sample/` holds
+**synthetic** files in this format for the self-check; the registrar and
+contacts in them are made up.
+
 ## How confidence is rated
 
 Confidence answers one question: *how strongly does this single observation
@@ -171,6 +205,9 @@ Downgrade rules currently applied:
 - A certificate with **21 to 50 names**: Medium, flag `large_san_list`.
 - An **expired** certificate keeps its rating but is flagged `expired_certificate`, and the reason notes the relationship may be historical.
 - A `shared_ip` link inherits the seed IP's rating: shared CDN IP is Low, cloud-hosted IP is Medium, otherwise High.
+- RDAP shows the seed IP's netblock holder is a **hosting or cloud provider** (matched against a keyword list): the netblock link is Low with flag `bulk_hosting_netblock`, and the domain-to-IP link drops from High to Medium with flag `cloud_hosted_ip`.
+- RDAP contact email or organisation naming a **privacy/proxy service**: Low, flag `privacy_proxy`.
+- Registrar links are always Low, flag `shared_registrar`.
 
 The provider lists in `rating.py` are starting points, not gospel. If you see
 a provider that should be there, add one line.
@@ -223,6 +260,28 @@ Do these by hand after a run to show human quality control over the tool.
    if it belongs to a CDN or a cloud provider, the link should be Low or
    Medium, not High.
 
+## Manual validation checks for Stage 3
+
+1. **Compare the registration section with ICANN's lookup.** Open
+   `https://lookup.icann.org/lookup?name=example.com` and check registrar,
+   creation date, expiry date, status codes and nameservers against the
+   report's "Registration data (RDAP)" section. Both read the same RDAP
+   data, so they should agree exactly.
+
+2. **Verify one netblock link with the RIR directly.** Take an
+   `rdap_netblock` link and open `https://rdap.org/ip/<ip>` in a browser, or
+   the RIR's own WHOIS page (ARIN, RIPE, APNIC, LACNIC, AFRINIC). Confirm the
+   CIDR and holder name match the evidence. Then judge the rating: a cloud or
+   hosting holder should be Low, a holder that is clearly the seed's own
+   organisation should be High.
+
+3. **Check the cross-source consistency notes.** If the report flags a
+   nameserver mismatch between DNS and the registry, confirm it with
+   `dig example.com NS +short` against the registry's list. If the domain is
+   flagged as registered within 90 days, confirm the creation date in the
+   ICANN lookup. If neither note appears, confirm by hand that DNS and
+   registry nameservers really do match, so you know the check ran.
+
 ---
 
 ## Safety and terms of use
@@ -232,23 +291,28 @@ Do these by hand after a run to show human quality control over the tool.
 - crt.sh is a free public service run by Sectigo. The tool makes two requests
   per seed, pauses between them, backs off on errors, identifies itself with a
   User-Agent, and caches results for 24 hours so re-runs cost crt.sh nothing.
-- Stage 3 will add RDAP, also public and rate-limit friendly.
+- RDAP servers are run by registries and RIRs with strict rate limits. The
+  tool makes one domain query plus one per seed IP (at most 8), pauses
+  between them, honours 429 responses by stopping rather than hammering, and
+  caches for 24 hours.
 - The tool produces leads. The analyst decides what they mean.
 
 ## Roadmap
 
 - **Stage 1 (done):** DNS collection, one-hop reverse-DNS pivot, rating, Markdown + CSV output, cache.
-- **Stage 2 (this version):** Certificate transparency via crt.sh; subdomain enumeration, shared-certificate pivot, shared-IP pivot.
-- **Stage 3:** RDAP registration data for the domain and each IP; use netblock ownership to sharpen the bulk-hosting downgrade.
+- **Stage 2 (done):** Certificate transparency via crt.sh; subdomain enumeration, shared-certificate pivot, shared-IP pivot.
+- **Stage 3 (this version):** RDAP registration data for the domain and each seed IP; netblock ownership sharpens the bulk-hosting downgrade.
+- **Ideas for version 2:** RDAP on the High-rated related domains to compare registrars and creation dates; a full Public Suffix List; passive DNS if you have an API key.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `pivot.py` | Command-line entry point and orchestration. |
-| `collectors.py` | Passive data collectors and the on-disk cache: DNS, crt.sh, IP pivot. |
+| `collectors.py` | Passive data collectors and the on-disk cache: DNS, crt.sh, IP pivot, RDAP. |
 | `rating.py` | Analytical rules: confidence ratings and shared-infrastructure lists. |
 | `report.py` | Markdown and CSV writers. |
 | `models.py` | Small data classes shared by the modules above. |
-| `test_rating.py` | Offline self-check of rating rules, CT parsing and the IP pivot (`python test_rating.py`). |
+| `test_rating.py` | Offline self-check of rating rules, CT parsing, the IP pivot and RDAP parsing (`python test_rating.py`). |
 | `examples/crtsh_sample_ietf.json` | Synthetic crt.sh output used by the self-check and for offline demos. |
+| `examples/rdap_sample/` | Synthetic RDAP responses in the `--rdap-dir` layout. |

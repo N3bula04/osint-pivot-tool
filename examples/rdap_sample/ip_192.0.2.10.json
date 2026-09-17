@@ -1,0 +1,10 @@
+{
+  "objectClassName": "ip network", "handle": "NET-192-0-2-8-1",
+  "startAddress": "192.0.2.8", "endAddress": "192.0.2.15", "ipVersion": "v4",
+  "name": "IETF-ADMIN-NET", "type": "DIRECT ASSIGNMENT", "country": "US",
+  "cidr0_cidrs": [{"v4prefix": "192.0.2.8", "length": 29}],
+  "entities": [
+    {"objectClassName": "entity", "handle": "IETFA", "roles": ["registrant"],
+     "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "IETF Administration LLC"], ["kind", {}, "text", "org"]]]}
+  ]
+}

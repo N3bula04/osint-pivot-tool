@@ -47,7 +47,7 @@ class RunResult:
     seed: str
     started: str
     finished: str = ""
-    stage: str = "Stage 2 - DNS + certificate transparency"
+    stage: str = "Stage 3 - DNS + certificate transparency + RDAP"
     links: List[Link] = field(default_factory=list)
     log: List[LogEntry] = field(default_factory=list)
     # Raw records grouped for display: {"example.com A": ["1.2.3.4", ...]}

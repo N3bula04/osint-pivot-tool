@@ -1,0 +1,10 @@
+{
+  "objectClassName": "ip network", "handle": "NET-35-184-0-0-1",
+  "startAddress": "35.184.0.0", "endAddress": "35.191.255.255", "ipVersion": "v4",
+  "name": "GOOGLE-CLOUD", "type": "DIRECT ALLOCATION",
+  "cidr0_cidrs": [{"v4prefix": "35.184.0.0", "length": 13}],
+  "entities": [
+    {"objectClassName": "entity", "handle": "GOOGL-2", "roles": ["registrant"],
+     "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Google LLC"], ["kind", {}, "text", "org"]]]}
+  ]
+}

@@ -8,7 +8,7 @@ import json
 import pathlib
 import tempfile
 
-from collectors import Cache, collect_ct, collect_shared_ips, parse_ct_entries
+from collectors import Cache, collect_ct, collect_rdap, collect_shared_ips, parse_ct_entries
 from models import Link, RunResult
 from rating import rate, rate_all, registrable_domain, shared_cdn_provider
 
@@ -98,6 +98,32 @@ results.append(check("shared IP link created", set(shared), {"other.example", "c
 results.append(check("shared dedicated IP -> High", shared["other.example"].confidence, "High"))
 results.append(check("shared CDN IP -> Low", shared["cdn-twin.example"].confidence, "Low"))
 results.append(check("shared-IP evidence cites both names", "other.example" in shared["other.example"].evidence and "93.184.216.34" in shared["other.example"].evidence, True))
+
+# ---- Stage 3: RDAP parsing, rating and the bulk-hosting downgrade (offline, from sample files) ----
+rdap_dir = pathlib.Path(__file__).parent / "examples" / "rdap_sample"
+rr = RunResult(seed="ietf.org", started="2026-01-01T00:00:00+00:00")
+rr.links.append(Link("ietf.org", "104.16.44.99", "dns_a", "ev", "DNS", "t"))
+rr.links.append(Link("ietf.org", "35.190.14.201", "dns_a", "ev", "DNS", "t"))
+rr.links.append(Link("ietf.org", "192.0.2.10", "dns_a", "ev", "DNS", "t"))
+rr.links.append(Link("ietf.org", "jill.ns.cloudflare.com", "dns_ns", "ev", "DNS", "t"))
+collect_rdap(rr, Cache(pathlib.Path(tempfile.mkdtemp()), enabled=False), rdap_dir=rdap_dir)
+rate_all(rr.links, "ietf.org")
+by = {(l.link_type, l.related_entity): l for l in rr.links}
+a_by_ip = {l.related_entity: l for l in rr.links if l.link_type == "dns_a"}
+section = "\n".join(rr.sections.get("Registration data (RDAP)", []))
+results.append(check("RDAP registrar parsed", by[("rdap_registrar", "Sample Registrar LLC")].confidence, "Low"))
+results.append(check("RDAP registration date in section", "1995-03-11" in section, True))
+results.append(check("RDAP registrant org -> Medium", by[("rdap_registrant_org", "IETF Administration LLC")].confidence, "Medium"))
+results.append(check("RDAP unredacted tech email -> High", by[("rdap_technical_email", "hostmaster@sample-msp.example")].confidence, "High"))
+results.append(check("RDAP abuse mailbox not linked", any(k[1] == "abuse@sample-registrar.example" for k in by), False))
+results.append(check("RDAP nameserver cloudflare -> Low", by[("rdap_nameserver", "jill.ns.cloudflare.com")].confidence, "Low"))
+results.append(check("RDAP NS mismatch noted (DNS lacks ken)", "Nameserver mismatch" in section, True))
+results.append(check("netblock Cloudflare -> Low", by[("rdap_netblock", "104.16.0.0/12")].confidence, "Low"))
+results.append(check("netblock Google Cloud -> bulk", "bulk_hosting_netblock" in by[("rdap_netblock", "35.184.0.0/13")].flags, True))
+results.append(check("netblock dedicated to seed org -> High", by[("rdap_netblock", "192.0.2.8/29")].confidence, "High"))
+results.append(check("A on bulk-hosting IP downgraded to Medium", a_by_ip["35.190.14.201"].confidence, "Medium"))
+results.append(check("A on dedicated IP stays High", a_by_ip["192.0.2.10"].confidence, "High"))
+results.append(check("privacy-proxy email -> Low", rate(mk("rdap_registrant_email", "abc123@withheldforprivacy.com"), SEED).confidence, "Low"))
 
 print(f"\n{sum(results)}/{len(results)} checks passed")
 raise SystemExit(0 if all(results) else 1)

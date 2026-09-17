@@ -146,6 +146,27 @@ GENERIC_PTR_PATTERNS = [
     (re.compile(r"\.(dynamic|dyn|dhcp|pool|cust|customer|client|clients)\."), "ISP customer/dynamic pool rDNS"),
 ]
 
+# Netblock holders that rent address space to the public. An IP inside one of
+# these blocks says "hosted at provider X", not "owned by the same people".
+BULK_HOSTING_KEYWORDS = [
+    "amazon", "aws", "google", "microsoft", "azure", "cloudflare", "fastly", "akamai",
+    "digitalocean", "linode", "akamai connected cloud", "vultr", "choopa", "constant",
+    "ovh", "hetzner", "leaseweb", "godaddy", "namecheap", "hostinger", "ionos", "1&1",
+    "alibaba", "aliyun", "tencent", "huawei", "oracle", "ibm cloud", "softlayer",
+    "rackspace", "contabo", "scaleway", "online s.a.s", "upcloud", "kamatera", "psychz",
+    "quadranet", "colocrossing", "hostwinds", "m247", "datacamp", "cdn77", "edgecast",
+    "stackpath", "sucuri", "imperva", "incapsula", "wix", "squarespace", "shopify",
+    "webflow", "vercel", "netlify", "github", "heroku", "salesforce", "hosting", "cloud",
+    "datacenter", "data center", "server", "colocation", "colo", "vps", "dedicated",
+]
+
+# Privacy / proxy services that stand in for the real registrant.
+PRIVACY_PROXY_KEYWORDS = [
+    "privacy", "proxy", "whoisguard", "withheldforprivacy", "domainsbyproxy", "contactprivacy",
+    "privacyprotect", "identity protect", "redacted", "gdpr", "data protected", "perfect privacy",
+    "anonymize", "privateregistration", "whoisprivacy", "identity shield", "registrant of",
+]
+
 # Two-level public suffixes we handle when working out the "registrable"
 # part of a domain. Not exhaustive; enough for common cases. (Stage 2 or 3
 # could swap in a full Public Suffix List if needed.)
@@ -331,6 +352,64 @@ def rate(link: Link, seed: str) -> Link:
             reason += " Certificate has expired, so the relationship may be historical."
             flags.append("expired_certificate")
 
+    elif lt == "rdap_registrar":
+        conf = "Low"
+        reason = "Registrar is shared by millions of unrelated domains; useful only in combination with other overlaps."
+        flags.append("shared_registrar")
+
+    elif lt == "rdap_nameserver":
+        # Same rules as DNS NS: the registry's view of the delegation.
+        provider = _match_provider(related, SHARED_NS_PROVIDERS)
+        if same_owner(related, seed):
+            conf, reason = "High", "Registry lists a nameserver under the seed's own domain (self-hosted DNS)."
+        elif provider:
+            conf = "Low"
+            reason = f"Registry lists a {provider} nameserver, a managed DNS service shared by many unrelated domains."
+            flags.append("shared_dns_provider")
+        else:
+            conf, reason = "Medium", "Registry lists a third-party nameserver not in the known-provider list. Verify the operator."
+
+    elif lt.startswith("rdap_") and lt.endswith("_email"):
+        low = related.lower()
+        if any(k in low for k in PRIVACY_PROXY_KEYWORDS):
+            conf = "Low"
+            reason = "Contact email belongs to a privacy/proxy service that fronts for many unrelated registrants."
+            flags.append("privacy_proxy")
+        elif low.split("@")[-1] == registrable_domain(seed) or same_owner(low.split("@")[-1], seed):
+            conf, reason = "Medium", "Contact email is under the seed's own domain; confirms ownership but is not a pivot to anything new."
+        else:
+            conf = "High"
+            reason = ("Unredacted contact email at a different domain. Searching other registrations for this "
+                      "address is a classic pivot. Verify it is not a registrar or hosting-company mailbox.")
+
+    elif lt.startswith("rdap_") and lt.endswith("_org"):
+        low = related.lower()
+        if any(k in low for k in PRIVACY_PROXY_KEYWORDS):
+            conf = "Low"
+            reason = "Organisation field names a privacy/proxy service, not the real registrant."
+            flags.append("privacy_proxy")
+        else:
+            conf = "Medium"
+            reason = "Unredacted organisation name. Pivot by searching other registrations for it, but names are self-declared and easy to fake."
+
+    elif lt == "rdap_netblock":
+        owner = str(link.meta.get("owner", "")).lower()
+        name = str(link.meta.get("name", "")).lower()
+        reg_org = str(link.meta.get("registrant_org", "")).lower()
+        holder_text = f"{owner} {name}"
+        seed_word = registrable_domain(seed).split(".")[0]
+        if reg_org and reg_org in holder_text or (len(seed_word) > 3 and seed_word in holder_text):
+            conf = "High"
+            reason = "Netblock holder name matches the seed's registrant/name; the IP space appears dedicated to the same organisation."
+            flags.append("dedicated_netblock")
+        elif any(k in holder_text for k in BULK_HOSTING_KEYWORDS):
+            conf = "Low"
+            reason = f"Netblock holder '{link.meta.get('owner') or link.meta.get('name')}' is a hosting/cloud provider; many unrelated tenants share this space."
+            flags.append("bulk_hosting_netblock")
+        else:
+            conf = "Medium"
+            reason = "Netblock holder is neither the seed organisation nor a known hosting provider; could be an ISP, a reseller or a related entity. Verify."
+
     elif lt == "shared_ip":
         # meta["ip_flags"] is filled by rate_all once IP links have been rated
         conf = "High"
@@ -359,6 +438,17 @@ def rate_all(links: List[Link], seed: str) -> List[Link]:
             l.confidence = "Medium"
             l.reason = ("Authoritative DNS answer, but reverse DNS shows a cloud/hosting provider IP; "
                         "likely dedicated today, yet cloud IPs are reassigned often. Verify before pivoting.")
+            l.flags.append("cloud_hosted_ip")
+
+    # Cross-link rule 3: RDAP says the seed's IP sits in a hosting/cloud netblock.
+    # The domain -> IP link drops from High to Medium (bulk hosting is weak evidence).
+    bulk_ips = {l.source_entity for l in links
+                if l.link_type == "rdap_netblock" and "bulk_hosting_netblock" in l.flags}
+    for l in links:
+        if l.link_type in ("dns_a", "dns_aaaa") and l.confidence == "High" and l.related_entity in bulk_ips:
+            l.confidence = "Medium"
+            l.reason = ("Authoritative DNS answer, but RDAP shows the IP belongs to a hosting/cloud provider's "
+                        "netblock; shared or reassignable space. Verify before pivoting.")
             l.flags.append("cloud_hosted_ip")
 
     # Cross-link rule 2: a shared-IP link is only as strong as the IP itself.

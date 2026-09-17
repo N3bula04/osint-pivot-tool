@@ -10,6 +10,7 @@ Usage:
 Stage 1: DNS (A, AAAA, MX, NS, TXT, DMARC TXT, plus reverse DNS on each IP).
 Stage 2: certificate transparency via crt.sh, then a capped resolve of discovered
          names to find domains sharing an IP with the seed.
+Stage 3: RDAP registration data for the seed domain and the netblock of each seed IP.
 """
 
 import argparse
@@ -17,12 +18,12 @@ import pathlib
 import re
 import sys
 
-from collectors import Cache, collect_ct, collect_dns, collect_shared_ips, now_iso
+from collectors import Cache, collect_ct, collect_dns, collect_rdap, collect_shared_ips, now_iso
 from models import RunResult
 from rating import confidence_counts, rate_all
 from report import write_reports
 
-TOOL_VERSION = "0.2.0 (Stage 2: DNS + crt.sh)"
+TOOL_VERSION = "0.3.0 (Stage 3: DNS + crt.sh + RDAP)"
 
 _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z0-9-]{2,63}$"
@@ -60,6 +61,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--skip-ct", action="store_true", help="skip certificate transparency (crt.sh)")
     p.add_argument("--ct-file", metavar="JSON", help="read crt.sh results from a saved JSON file instead of the network")
     p.add_argument("--ct-timeout", type=float, default=60.0, help="crt.sh request timeout in seconds (default: 60; crt.sh can be slow)")
+    p.add_argument("--skip-rdap", action="store_true", help="skip RDAP registration lookups")
+    p.add_argument("--rdap-dir", metavar="DIR", help="read RDAP JSON from DIR/domain_<seed>.json and DIR/ip_<ip>.json instead of the network")
+    p.add_argument("--rdap-timeout", type=float, default=30.0, help="RDAP request timeout in seconds (default: 30)")
     p.add_argument("--max-resolve", type=int, default=30, help="max discovered names to resolve for the IP pivot (default: 30; 0 disables)")
     p.add_argument("--version", action="version", version=f"%(prog)s {TOOL_VERSION}")
     return p.parse_args(argv)
@@ -94,6 +98,14 @@ def main(argv=None) -> int:
     if args.max_resolve > 0 and discovered:
         print(f"[*] IP pivot: resolving up to {args.max_resolve} of {len(discovered)} discovered names...")
         collect_shared_ips(result, cache, sorted(discovered), args.resolver, args.timeout, args.max_resolve)
+
+    if args.skip_rdap:
+        result.sections["Registration data (RDAP)"] = ["Skipped (--skip-rdap)."]
+    else:
+        print("[*] Querying RDAP for the domain and its IPs..." if not args.rdap_dir
+              else f"[*] Loading RDAP data from {args.rdap_dir}/...")
+        collect_rdap(result, cache, rdap_dir=pathlib.Path(args.rdap_dir) if args.rdap_dir else None,
+                     timeout=args.rdap_timeout)
 
     rate_all(result.links, seed)
     result.finished = now_iso()

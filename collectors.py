@@ -503,3 +503,259 @@ def collect_shared_ips(result: RunResult, cache: Cache, names: List[str], namese
         f"- Seed IPs: {len(seed_ips)}",
         f"- Other domains sharing an IP with the seed: {found}",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Registration data (RDAP): the domain, and the netblock behind each seed IP
+# ---------------------------------------------------------------------------
+
+RDAP_SOURCE_LABEL = "RDAP (registry/RIR via rdap.org)"
+RDAP_REDIRECTOR = "https://rdap.org/"
+IANA_BOOTSTRAP = {"domain": "https://data.iana.org/rdap/dns.json",
+                  "ipv4": "https://data.iana.org/rdap/ipv4.json",
+                  "ipv6": "https://data.iana.org/rdap/ipv6.json"}
+RDAP_PAUSE_SECONDS = 1.0
+RDAP_MAX_IPS = 8  # RDAP the seed's own IPs only; RIR rate limits are strict
+
+
+def _rdap_get(url: str, timeout: float) -> Tuple[str, Optional[dict], str]:
+    """One HTTP GET with RDAP headers. Returns (status, json_or_None, detail)."""
+    try:
+        resp = requests.get(url, headers={"Accept": "application/rdap+json, application/json",
+                                          "User-Agent": USER_AGENT}, timeout=timeout, allow_redirects=True)
+    except requests.Timeout:
+        return "timeout", None, f"no answer within {timeout:.0f}s"
+    except requests.RequestException as e:
+        return "error", None, f"network error: {type(e).__name__}: {e}"
+    if resp.status_code == 200:
+        try:
+            return "ok", resp.json(), f"HTTP 200 from {resp.url.split('/')[2]}"
+        except ValueError:
+            return "error", None, "HTTP 200 but body was not JSON"
+    if resp.status_code == 404:
+        return "empty", None, "HTTP 404: no RDAP record (unregistered, or registry has no RDAP)"
+    if resp.status_code == 429:
+        return "error", None, f"HTTP 429 rate limited (Retry-After: {resp.headers.get('Retry-After', '?')})"
+    return "error", None, f"HTTP {resp.status_code} from {resp.url.split('/')[2]}"
+
+
+def _bootstrap_server(cache: Cache, kind: str, target: str, timeout: float) -> Optional[str]:
+    """Look up the authoritative RDAP base URL from IANA's bootstrap files."""
+    key = IANA_BOOTSTRAP[kind]
+    cached = cache.get("rdap", f"bootstrap:{kind}")
+    data = cached["data"] if cached else None
+    if data is None:
+        status, data, _ = _rdap_get(key, timeout)
+        if status != "ok" or not isinstance(data, dict):
+            return None
+        cache.put("rdap", f"bootstrap:{kind}", {"status": "ok", "data": data})
+    try:
+        import ipaddress as _ip
+        for entry in data.get("services", []):
+            keys, urls = entry[0], entry[1]
+            if kind == "domain":
+                if target.rsplit(".", 1)[-1].lower() in [k.lower() for k in keys]:
+                    return urls[0]
+            else:
+                addr = _ip.ip_address(target)
+                if any(addr in _ip.ip_network(k, strict=False) for k in keys):
+                    return urls[0]
+    except (ValueError, IndexError, TypeError):
+        return None
+    return None
+
+
+def rdap_fetch(cache: Cache, kind: str, target: str, timeout: float = 30.0) -> Tuple[str, Optional[dict], str]:
+    """Fetch an RDAP object ('domain' or 'ip'). Tries rdap.org, then IANA bootstrap. Never raises."""
+    key = f"{kind}:{target}"
+    cached = cache.get("rdap", key)
+    if cached is not None:
+        return cached["status"], cached.get("data"), f"cached ({cached['fetched_at']})"
+
+    status, data, detail = _rdap_get(f"{RDAP_REDIRECTOR}{kind}/{target}", timeout)
+    if status not in ("ok", "empty"):
+        bkind = "domain" if kind == "domain" else ("ipv6" if ":" in target else "ipv4")
+        base = _bootstrap_server(cache, bkind, target, timeout)
+        if base:
+            status2, data2, detail2 = _rdap_get(f"{base.rstrip('/')}/{kind}/{target}", timeout)
+            detail = f"rdap.org failed ({detail}); bootstrap server: {detail2}"
+            status, data = status2, data2
+        else:
+            detail = f"rdap.org failed ({detail}); IANA bootstrap lookup also unavailable"
+    if status in _CACHEABLE:
+        cache.put("rdap", key, {"status": status, "data": data})
+    return status, data, detail
+
+
+# --- RDAP JSON helpers (defensive: registries differ a lot) -----------------
+
+
+def _vcard(entity: dict) -> Dict[str, str]:
+    """Flatten a jCard into {fn, org, email, country}."""
+    out: Dict[str, str] = {}
+    try:
+        for item in entity.get("vcardArray", [None, []])[1]:
+            name, _, _, value = item[0], item[1], item[2], item[3]
+            if name in ("fn", "org", "email") and isinstance(value, str) and value.strip():
+                out.setdefault(name, value.strip())
+            elif name == "adr":
+                if isinstance(value, list) and len(value) >= 7 and value[6]:
+                    out.setdefault("country", str(value[6]))
+                label = item[1].get("cc") if isinstance(item[1], dict) else None
+                if label:
+                    out.setdefault("country", label)
+    except (IndexError, TypeError, AttributeError):
+        pass
+    return out
+
+
+def _entities_by_role(obj: dict) -> Dict[str, List[dict]]:
+    out: Dict[str, List[dict]] = defaultdict(list)
+    for ent in obj.get("entities", []) or []:
+        for role in ent.get("roles", []) or []:
+            out[role].append(ent)
+        for sub in ent.get("entities", []) or []:     # nested (registrar -> abuse contact etc.)
+            for role in sub.get("roles", []) or []:
+                out[role].append(sub)
+    return out
+
+
+def _events(obj: dict) -> Dict[str, str]:
+    return {e.get("eventAction", ""): (e.get("eventDate") or "")[:10] for e in obj.get("events", []) or []}
+
+
+def _rdap_ip_block(obj: dict) -> str:
+    """Best-effort CIDR (or start-end) for an ip network object."""
+    cidrs = obj.get("cidr0_cidrs") or []
+    parts = []
+    for c in cidrs:
+        pfx = c.get("v4prefix") or c.get("v6prefix")
+        if pfx and "length" in c:
+            parts.append(f"{pfx}/{c['length']}")
+    if parts:
+        return ", ".join(parts)
+    return f"{obj.get('startAddress', '?')}-{obj.get('endAddress', '?')}"
+
+
+# --- the collector ----------------------------------------------------------
+
+
+def _load_saved_rdap(rdap_dir: pathlib.Path, kind: str, target: str) -> Tuple[str, Optional[dict], str]:
+    p = rdap_dir / f"{kind}_{target.replace(':', '-')}.json"  # colons are illegal in Windows filenames
+    if not p.exists():
+        return "empty", None, f"no saved file {p.name} in offline mode"
+    try:
+        return "ok", json.loads(p.read_text(encoding="utf-8")), f"loaded from {p.name} (no network)"
+    except (OSError, ValueError) as e:
+        return "error", None, f"could not read {p.name}: {e}"
+
+
+def collect_rdap(result: RunResult, cache: Cache, rdap_dir: Optional[pathlib.Path] = None,
+                 timeout: float = 30.0) -> None:
+    """Populate registration-data links and sections for the seed and its IPs."""
+    seed = result.seed
+    ts = now_iso()
+    today = _dt.date.today()
+
+    def log(query: str, status: str, detail: str) -> None:
+        result.log.append(LogEntry("RDAP", query, status, detail, now_iso()))
+
+    def fetch(kind: str, target: str):
+        if rdap_dir is not None:
+            return _load_saved_rdap(rdap_dir, kind, target)
+        return rdap_fetch(cache, kind, target, timeout=timeout)
+
+    # ---------------- domain ----------------
+    lines: List[str] = []
+    status, dom, detail = fetch("domain", seed)
+    log(f"rdap domain {seed}", status, detail)
+    registrant_org = ""
+    if status == "ok" and isinstance(dom, dict):
+        roles = _entities_by_role(dom)
+        ev = _events(dom)
+        registrar = next((_vcard(e).get("fn") for e in roles.get("registrar", []) if _vcard(e).get("fn")), "")
+        iana_id = next((p.get("identifier") for e in roles.get("registrar", [])
+                        for p in e.get("publicIds", []) or [] if "IANA" in p.get("type", "")), "")
+        rdap_ns = sorted({(n.get("ldhName") or "").lower().rstrip(".") for n in dom.get("nameservers", []) or []} - {""})
+        dns_ns = sorted({l.related_entity for l in result.links if l.link_type == "dns_ns"})
+        statuses = ", ".join(dom.get("status", []) or []) or "none listed"
+        dnssec = (dom.get("secureDNS") or {}).get("delegationSigned")
+        created, expires, changed = ev.get("registration", ""), ev.get("expiration", ""), ev.get("last changed", "")
+
+        lines.append(f"- Registrar: {registrar or 'not disclosed'}" + (f" (IANA ID {iana_id})" if iana_id else ""))
+        lines.append(f"- Registered: {created or 'unknown'} | Last changed: {changed or 'unknown'} | Expires: {expires or 'unknown'}")
+        if created:
+            try:
+                age_days = (today - _dt.date.fromisoformat(created)).days
+                lines.append(f"- Domain age: {age_days} days" + ("  **(registered within the last 90 days)**" if age_days < 90 else ""))
+            except ValueError:
+                pass
+        lines.append(f"- Status: {statuses}")
+        lines.append(f"- DNSSEC signed: {dnssec if dnssec is not None else 'unknown'}")
+        lines.append(f"- Registry nameservers: {', '.join(rdap_ns) or 'none listed'}")
+        if rdap_ns and dns_ns and set(rdap_ns) != set(dns_ns):
+            lines.append(f"- **Nameserver mismatch**: DNS answers {', '.join(dns_ns)} but the registry lists "
+                         f"{', '.join(rdap_ns)}. Delegation change in progress, or a lame delegation. Worth a look.")
+        for role in ("registrant", "administrative", "technical"):
+            for e in roles.get(role, []):
+                vc = _vcard(e)
+                if not vc:
+                    continue
+                lines.append(f"- {role.capitalize()} contact: " + ", ".join(
+                    f"{k}={v}" for k, v in vc.items()))
+                if role == "registrant":
+                    registrant_org = vc.get("org") or vc.get("fn") or registrant_org
+                for field_name in ("email", "org"):
+                    val = vc.get(field_name)
+                    if val and val.lower() != seed:
+                        evid = (f"RDAP domain record for {seed}: {role} contact {field_name}={val}; "
+                                f"https://rdap.org/domain/{seed}")
+                        result.links.append(Link(seed, val, f"rdap_{role}_{field_name}", evid, RDAP_SOURCE_LABEL, ts,
+                                                 meta={"role": role}))
+        if registrar:
+            evid = f"RDAP domain record for {seed}: registrar '{registrar}'" + (f", IANA ID {iana_id}" if iana_id else "") + f"; https://rdap.org/domain/{seed}"
+            result.links.append(Link(seed, registrar, "rdap_registrar", evid, RDAP_SOURCE_LABEL, ts))
+        for ns in rdap_ns:
+            result.links.append(Link(seed, ns, "rdap_nameserver", f"RDAP domain record for {seed} lists nameserver {ns}; https://rdap.org/domain/{seed}",
+                                     RDAP_SOURCE_LABEL, ts))
+        result.records[f"rdap domain {seed} nameservers"] = rdap_ns
+        lines.append(f"- Manual check: https://rdap.org/domain/{seed} or https://lookup.icann.org/lookup?name={seed}")
+    else:
+        lines.append(f"Domain RDAP unavailable: {detail}")
+    result.sections["Registration data (RDAP)"] = lines
+
+    # ---------------- IPs ----------------
+    seed_ips = sorted({l.related_entity for l in result.links
+                       if l.source_entity == seed and l.link_type in ("dns_a", "dns_aaaa")})
+    lines = []
+    if len(seed_ips) > RDAP_MAX_IPS:
+        log("rdap ip budget", "empty", f"{len(seed_ips) - RDAP_MAX_IPS} seed IP(s) skipped (RDAP_MAX_IPS={RDAP_MAX_IPS})")
+        seed_ips = seed_ips[:RDAP_MAX_IPS]
+    for i, ip in enumerate(seed_ips):
+        if i and rdap_dir is None:
+            time.sleep(RDAP_PAUSE_SECONDS)
+        status, net, detail = fetch("ip", ip)
+        log(f"rdap ip {ip}", status, detail)
+        if status != "ok" or not isinstance(net, dict):
+            lines.append(f"- `{ip}`: RDAP unavailable ({detail})")
+            continue
+        block = _rdap_ip_block(net)
+        roles = _entities_by_role(net)
+        owner = ""
+        for role in ("registrant", "administrative", "technical", "abuse"):
+            owner = next((_vcard(e).get("fn") or _vcard(e).get("org") for e in roles.get(role, []) if _vcard(e)), "")
+            if owner:
+                break
+        name = net.get("name") or ""
+        country = net.get("country") or ""
+        ntype = net.get("type") or ""
+        lines.append(f"- `{ip}` is in `{block}` ({name or 'unnamed'}), holder: {owner or 'not disclosed'}"
+                     + (f", country {country}" if country else "") + (f", type {ntype}" if ntype else ""))
+        evid = (f"RDAP ip record for {ip}: network {block} name='{name}' holder='{owner}'"
+                + (f" country={country}" if country else "") + f"; https://rdap.org/ip/{ip}")
+        result.links.append(Link(ip, block, "rdap_netblock", evid, RDAP_SOURCE_LABEL, ts,
+                                 meta={"owner": owner, "name": name, "block": block,
+                                       "registrant_org": registrant_org}))
+    if not seed_ips:
+        lines.append("No seed IPs to look up.")
+    result.sections["IP ownership (RDAP)"] = lines
