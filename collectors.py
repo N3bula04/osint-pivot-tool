@@ -1,12 +1,15 @@
-"""Passive data collectors and the on-disk cache.
+"""Data collectors and the on-disk cache.
 
 Stage 1: DNS (A, AAAA, MX, NS, TXT, _dmarc TXT, PTR on each IP).
 Stage 2: Certificate transparency via crt.sh, plus a capped DNS resolve of
          the names it discovers so we can find domains sharing an IP.
+Stage 3: RDAP registration data for the domain and the netblocks of its IPs.
 
 Design rules every collector follows:
-  * Never contact the target directly. DNS goes through your recursive
-    resolver; crt.sh is a third-party archive of public CT logs.
+  * No direct connections from this tool to the target's web/app servers.
+    DNS goes through your recursive resolver (which may in turn query the
+    target's authoritative nameservers); crt.sh and RDAP are third-party
+    services.
   * Never raise. Every failure becomes a LogEntry so the report shows gaps.
   * Cache every raw answer on disk so re-runs do not re-query.
   * Return Links with evidence and a data_source, nothing else. Confidence
@@ -27,13 +30,13 @@ import dns.resolver
 import dns.reversename
 import requests
 
-from models import Link, LogEntry, RunResult
-from rating import registrable_domain
+from models import TOOL_VERSION_NUMBER, Link, LogEntry, RunResult
+from rating import registrable_domain, shared_cdn_provider
 
 DNS_SOURCE_LABEL = "DNS (system resolver via dnspython)"
 CT_SOURCE_LABEL = "Certificate Transparency (crt.sh)"
 CRTSH_URL = "https://crt.sh/"
-USER_AGENT = "osint-pivot-tool/0.2 (+https://github.com/N3bula04/osint-pivot-tool; passive research)"
+USER_AGENT = f"osint-pivot-tool/{TOOL_VERSION_NUMBER} (+https://github.com/N3bula04/osint-pivot-tool; OSINT research)"
 CACHE_TTL_HOURS = 24  # cached answers older than this are re-queried
 CRTSH_PAUSE_SECONDS = 2.0   # polite gap between crt.sh requests
 CRTSH_RETRIES = 3           # crt.sh returns 502/503 fairly often; retry with backoff
@@ -41,6 +44,12 @@ CRTSH_RETRIES = 3           # crt.sh returns 502/503 fairly often; retry with ba
 # Statuses that are safe to cache. Timeouts and errors are never cached, so a
 # transient failure does not poison later runs.
 _CACHEABLE = {"ok", "empty", "nxdomain"}
+
+
+def truncate(text: str, limit: int = 200) -> str:
+    """Shorten long error text (e.g. nested SSL tracebacks) for reports and the console."""
+    text = str(text)
+    return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
 
 
 def now_iso() -> str:
@@ -515,7 +524,7 @@ def collect_shared_ips(result: RunResult, cache: Cache, names: List[str], namese
                 continue
             found += 1
             ev = f"{seed} A/AAAA -> {ip}; {name} A/AAAA -> {ip} (both observed {ts})"
-            result.links.append(Link(seed, name, "shared_ip", ev, DNS_SOURCE_LABEL, ts))
+            result.links.append(Link(seed, name, "shared_ip", ev, DNS_SOURCE_LABEL, ts, meta={"ip": ip}))
     result.sections["IP pivot"] = [
         f"- Discovered names resolved: {len(todo)} (skipped {skipped})",
         f"- Seed IPs: {len(seed_ips)}",
@@ -537,7 +546,54 @@ IANA_BOOTSTRAP = {"domain": "https://data.iana.org/rdap/dns.json",
                   "ipv4": "https://data.iana.org/rdap/ipv4.json",
                   "ipv6": "https://data.iana.org/rdap/ipv6.json"}
 RDAP_PAUSE_SECONDS = 1.0
-RDAP_MAX_IPS = 8  # RDAP the seed's own IPs only; RIR rate limits are strict
+RDAP_MAX_IPS = 8          # seed IPs looked up per run; RIR rate limits are strict
+RDAP_MAX_RELATED_IPS = 4  # extra lookups for IPs of related (third-party) hosts found in the IP pivot
+RDAP_DEFAULT_BACKOFF_SECONDS = 600  # used when a 429 carries no usable Retry-After
+
+
+def _parse_retry_after(value: Optional[str]) -> int:
+    """Retry-After is either delta-seconds or an HTTP date. Returns seconds (>= 0)."""
+    if not value:
+        return RDAP_DEFAULT_BACKOFF_SECONDS
+    value = value.strip()
+    if value.isdigit():
+        return int(value)
+    try:
+        from email.utils import parsedate_to_datetime
+        when = parsedate_to_datetime(value)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=_dt.timezone.utc)
+        return max(0, int((when - _dt.datetime.now(_dt.timezone.utc)).total_seconds()))
+    except (TypeError, ValueError, IndexError):
+        return RDAP_DEFAULT_BACKOFF_SECONDS
+
+
+class RdapRateLimit(Exception):
+    """Raised inside the RDAP code when a server answers HTTP 429."""
+
+    def __init__(self, retry_after: int, detail: str):
+        super().__init__(detail)
+        self.retry_after = retry_after
+        self.detail = detail
+
+
+def _rdap_backoff_until(cache: Cache) -> Optional[_dt.datetime]:
+    """If an earlier run was told to back off, return when that ends (else None)."""
+    if not cache.enabled:
+        return None
+    p = cache._path("rdap", "ratelimit")  # read directly: refresh must not bypass a back-off
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        until = _dt.datetime.fromisoformat(data["until"])
+    except (OSError, ValueError, KeyError):
+        return None
+    return until if until > _dt.datetime.now(_dt.timezone.utc) else None
+
+
+def _rdap_record_backoff(cache: Cache, seconds: int) -> _dt.datetime:
+    until = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0) + _dt.timedelta(seconds=seconds)
+    cache.put("rdap", "ratelimit", {"status": "rate_limited", "until": until.isoformat()})
+    return until
 
 
 def _rdap_get(url: str, timeout: float) -> Tuple[str, Optional[dict], str]:
@@ -557,7 +613,9 @@ def _rdap_get(url: str, timeout: float) -> Tuple[str, Optional[dict], str]:
     if resp.status_code == 404:
         return "empty", None, "HTTP 404: no RDAP record (unregistered, or registry has no RDAP)"
     if resp.status_code == 429:
-        return "error", None, f"HTTP 429 rate limited (Retry-After: {resp.headers.get('Retry-After', '?')})"
+        raw = resp.headers.get("Retry-After")
+        raise RdapRateLimit(_parse_retry_after(raw),
+                            f"HTTP 429 rate limited by {resp.url.split('/')[2]} (Retry-After: {raw or 'not given'})")
     return "error", None, f"HTTP {resp.status_code} from {resp.url.split('/')[2]}"
 
 
@@ -588,7 +646,11 @@ def _bootstrap_server(cache: Cache, kind: str, target: str, timeout: float) -> O
 
 
 def rdap_fetch(cache: Cache, kind: str, target: str, timeout: float = 30.0) -> Tuple[str, Optional[dict], str]:
-    """Fetch an RDAP object ('domain' or 'ip'). Tries rdap.org, then IANA bootstrap. Never raises."""
+    """Fetch an RDAP object ('domain' or 'ip'). Tries rdap.org, then IANA bootstrap.
+
+    Raises RdapRateLimit on HTTP 429 so the caller can stop all further RDAP
+    requests for the run; never raises anything else.
+    """
     key = f"{kind}:{target}"
     cached = cache.get("rdap", key)
     if cached is not None:
@@ -682,10 +744,28 @@ def collect_rdap(result: RunResult, cache: Cache, rdap_dir: Optional[pathlib.Pat
     def log(query: str, status: str, detail: str) -> None:
         result.log.append(LogEntry("RDAP", query, status, detail, now_iso()))
 
+    # Once any RDAP server answers 429 we stop querying RDAP for the rest of
+    # this run, and remember the Retry-After window so later runs wait too.
+    state = {"stopped": ""}
+    if rdap_dir is None:
+        until = _rdap_backoff_until(cache)
+        if until is not None:
+            state["stopped"] = f"skipped: RDAP rate-limited earlier; backing off until {until.isoformat()}"
+
     def fetch(kind: str, target: str):
         if rdap_dir is not None:
             return _load_saved_rdap(rdap_dir, kind, target)
-        return rdap_fetch(cache, kind, target, timeout=timeout)
+        if state["stopped"]:
+            cached = cache.get("rdap", f"{kind}:{target}")
+            if cached is not None:
+                return cached["status"], cached.get("data"), f"cached ({cached['fetched_at']})"
+            return "skipped", None, state["stopped"]
+        try:
+            return rdap_fetch(cache, kind, target, timeout=timeout)
+        except RdapRateLimit as e:
+            until = _rdap_record_backoff(cache, e.retry_after)
+            state["stopped"] = f"skipped: RDAP rate-limited earlier in this run; backing off until {until.isoformat()}"
+            return "error", None, f"{e.detail}; no further RDAP requests this run"
 
     # ---------------- domain ----------------
     lines: List[str] = []
@@ -743,23 +823,35 @@ def collect_rdap(result: RunResult, cache: Cache, rdap_dir: Optional[pathlib.Pat
         result.records[f"rdap domain {seed} nameservers"] = rdap_ns
         lines.append(f"- Manual check: https://rdap.org/domain/{seed} or https://lookup.icann.org/lookup?name={seed}")
     else:
-        lines.append(f"Domain RDAP unavailable: {detail}")
+        lines.append(f"Domain RDAP unavailable: {truncate(detail)}")
     result.sections["Registration data (RDAP)"] = lines
 
     # ---------------- IPs ----------------
     seed_ips = sorted({l.related_entity for l in result.links
                        if l.source_entity == seed and l.link_type in ("dns_a", "dns_aaaa")})
+    # IPs of third-party hosts found in the IP pivot (e.g. a domain sharing a
+    # certificate with the seed). Without RDAP these would stay unverified.
+    related_ips = sorted({l.related_entity for l in result.links
+                          if l.link_type in ("dns_a", "dns_aaaa") and l.source_entity != seed
+                          and "seed_owned_host" in l.meta and not l.meta.get("seed_owned_host")
+                          and not shared_cdn_provider(l.related_entity)}  # CDN IPs are already Low
+                         - set(seed_ips))
     lines = []
     if len(seed_ips) > RDAP_MAX_IPS:
         log("rdap ip budget", "empty", f"{len(seed_ips) - RDAP_MAX_IPS} seed IP(s) skipped (RDAP_MAX_IPS={RDAP_MAX_IPS})")
         seed_ips = seed_ips[:RDAP_MAX_IPS]
-    for i, ip in enumerate(seed_ips):
-        if i and rdap_dir is None:
+    if len(related_ips) > RDAP_MAX_RELATED_IPS:
+        log("rdap related ip budget", "empty", f"{len(related_ips) - RDAP_MAX_RELATED_IPS} related-host IP(s) skipped "
+            f"(RDAP_MAX_RELATED_IPS={RDAP_MAX_RELATED_IPS})")
+        related_ips = related_ips[:RDAP_MAX_RELATED_IPS]
+    targets = [(ip, False) for ip in seed_ips] + [(ip, True) for ip in related_ips]
+    for i, (ip, is_related) in enumerate(targets):
+        if i and rdap_dir is None and not state["stopped"]:
             time.sleep(RDAP_PAUSE_SECONDS)
         status, net, detail = fetch("ip", ip)
-        log(f"rdap ip {ip}", status, detail)
+        log(f"rdap ip {ip}" + (" (related host)" if is_related else ""), status, detail)
         if status != "ok" or not isinstance(net, dict):
-            lines.append(f"- `{ip}`: RDAP unavailable ({detail})")
+            lines.append(f"- `{ip}`: RDAP unavailable ({truncate(detail)})")
             continue
         block = _rdap_ip_block(net)
         roles = _entities_by_role(net)
@@ -771,13 +863,16 @@ def collect_rdap(result: RunResult, cache: Cache, rdap_dir: Optional[pathlib.Pat
         name = net.get("name") or ""
         country = net.get("country") or ""
         ntype = net.get("type") or ""
-        lines.append(f"- `{ip}` is in `{block}` ({name or 'unnamed'}), holder: {owner or 'not disclosed'}"
+        lines.append(f"- `{ip}`" + (" (IP of a related host)" if is_related else "")
+                     + f" is in `{block}` ({name or 'unnamed'}), holder: {owner or 'not disclosed'}"
                      + (f", country {country}" if country else "") + (f", type {ntype}" if ntype else ""))
         evid = (f"RDAP ip record for {ip}: network {block} name='{name}' holder='{owner}'"
                 + (f" country={country}" if country else "") + f"; https://rdap.org/ip/{ip}")
         result.links.append(Link(ip, block, "rdap_netblock", evid, RDAP_SOURCE_LABEL, ts,
                                  meta={"owner": owner, "name": name, "block": block,
-                                       "registrant_org": registrant_org}))
-    if not seed_ips:
+                                       "registrant_org": registrant_org, "related_ip": is_related}))
+    if not targets:
         lines.append("No seed IPs to look up.")
+    if state["stopped"]:
+        lines.append(f"- **RDAP stopped early:** {state['stopped']}. Re-run later to fill the gaps.")
     result.sections["IP ownership (RDAP)"] = lines

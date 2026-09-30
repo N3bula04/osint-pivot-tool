@@ -7,6 +7,8 @@ Keeping these in one small file means every other module agrees on what a
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+TOOL_VERSION_NUMBER = "0.3.1"
+
 
 @dataclass
 class Link:
