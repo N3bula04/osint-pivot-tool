@@ -1,0 +1,10 @@
+{
+  "objectClassName": "ip network", "handle": "NET-104-16-0-0-1",
+  "startAddress": "104.16.0.0", "endAddress": "104.31.255.255", "ipVersion": "v4",
+  "name": "CLOUDFLARENET", "type": "DIRECT ALLOCATION",
+  "cidr0_cidrs": [{"v4prefix": "104.16.0.0", "length": 12}],
+  "entities": [
+    {"objectClassName": "entity", "handle": "CLOUD14", "roles": ["registrant"],
+     "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Cloudflare, Inc."], ["kind", {}, "text", "org"]]]}
+  ]
+}

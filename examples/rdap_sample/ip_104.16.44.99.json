@@ -1,0 +1,12 @@
+{
+  "objectClassName": "ip network", "handle": "NET-104-16-0-0-1",
+  "startAddress": "104.16.0.0", "endAddress": "104.31.255.255", "ipVersion": "v4",
+  "name": "CLOUDFLARENET", "type": "DIRECT ALLOCATION", "parentHandle": "NET-104-0-0-0-0",
+  "cidr0_cidrs": [{"v4prefix": "104.16.0.0", "length": 12}],
+  "events": [{"eventAction": "registration", "eventDate": "2014-03-28T00:00:00-04:00"}],
+  "entities": [
+    {"objectClassName": "entity", "handle": "CLOUD14", "roles": ["registrant"],
+     "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Cloudflare, Inc."], ["kind", {}, "text", "org"],
+                              ["adr", {"label": "101 Townsend Street\nSan Francisco\nCA\n94107\nUnited States"}, "text", ["", "", "", "", "", "", ""]]]]}
+  ]
+}
