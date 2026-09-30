@@ -236,8 +236,13 @@ def _split_registrable(hostname: str) -> Tuple[str, str]:
         return "", ""
     if _PSL is not None:
         r = _PSL(h)
-        return r.domain, r.suffix
+        if r.suffix:
+            return r.domain, r.suffix
+        # Not on the PSL (.test, .internal, .lan ...). The PSL's default rule
+        # "*" treats an unknown TLD as a one-label public suffix; do the same.
     parts = h.split(".")
+    if _PSL is not None:
+        return (parts[-2], parts[-1]) if len(parts) >= 2 else ("", "")
     if len(parts) >= 3 and ".".join(parts[-2:]) in FALLBACK_TWO_LEVEL_SUFFIXES:
         return parts[-3], ".".join(parts[-2:])
     if len(parts) >= 2:
@@ -278,13 +283,23 @@ def same_owner(host_a: str, host_b: str) -> bool:
     return registrable_domain(host_a) == registrable_domain(host_b)
 
 
+# Extra ranges used only by the offline demo (fictional CDN in documentation space).
+_EXTRA_CDN_RANGES: dict = {}
+
+
+def set_extra_cdn_ranges(ranges: dict) -> None:
+    """Offline demo hook: {provider: [cidr, ...]} added to the published ranges. {} resets."""
+    global _EXTRA_CDN_RANGES
+    _EXTRA_CDN_RANGES = dict(ranges or {})
+
+
 def shared_cdn_provider(ip: str) -> Optional[str]:
     """Return the CDN name if `ip` falls inside a published shared range."""
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return None
-    for provider, ranges in SHARED_CDN_RANGES.items():
+    for provider, ranges in list(SHARED_CDN_RANGES.items()) + list(_EXTRA_CDN_RANGES.items()):
         for cidr in ranges:
             if addr in ipaddress.ip_network(cidr, strict=False):
                 return provider
