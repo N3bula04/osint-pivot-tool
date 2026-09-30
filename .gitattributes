@@ -1,0 +1,5 @@
+# The CSV sample is written with CRLF row endings (Python csv default); keep its bytes
+# exactly so CI can diff it against regenerated output.
+samples/*.csv -text
+samples/*.md text eol=lf
+examples/** text eol=lf

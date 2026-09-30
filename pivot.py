@@ -11,13 +11,20 @@ Stage 1: DNS (A, AAAA, MX, NS, TXT, DMARC TXT, plus reverse DNS on each IP).
 Stage 2: certificate transparency via crt.sh, then a capped resolve of discovered
          names to find domains sharing an IP with the seed.
 Stage 3: RDAP registration data for the seed domain and the netblock of each seed IP.
+
+Offline demo (no network at all, synthetic fixtures, reproducible output):
+    python pivot.py --demo
+    python pivot.py example-demo.test --offline examples/offline_demo --fixed-time 2026-09-30T00:00:00+00:00
 """
 
 import argparse
+import datetime as _dt
 import pathlib
 import re
 import sys
 
+import collectors
+import offline
 from collectors import Cache, collect_ct, collect_dns, collect_rdap, collect_shared_ips, now_iso, truncate
 from models import TOOL_VERSION_NUMBER, RunResult
 from rating import confidence_counts, rate_all, same_owner
@@ -50,7 +57,7 @@ def parse_args(argv=None) -> argparse.Namespace:
         prog="pivot.py",
         description="OSINT infrastructure pivot tool (DNS via your resolver, crt.sh, RDAP; no direct connections to the target's web/app servers). Produces a Markdown report and a CSV of evidence-backed links.",
     )
-    p.add_argument("domain", help="seed domain, e.g. example.com")
+    p.add_argument("domain", nargs="?", help="seed domain, e.g. example.com (optional with --demo)")
     p.add_argument("-o", "--output-dir", default="reports", help="where to write reports (default: reports/)")
     p.add_argument("--cache-dir", default="cache", help="where raw responses are cached (default: cache/)")
     p.add_argument("--refresh", action="store_true", help="ignore cached responses and re-query every source")
@@ -65,25 +72,68 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--rdap-dir", metavar="DIR", help="read RDAP JSON from DIR/domain_<seed>.json and DIR/ip_<ip>.json instead of the network")
     p.add_argument("--rdap-timeout", type=float, default=30.0, help="RDAP request timeout in seconds (default: 30)")
     p.add_argument("--max-resolve", type=int, default=30, help="max discovered names to resolve for the IP pivot (default: 30; 0 disables)")
+    p.add_argument("--offline", metavar="DIR", help="answer DNS, crt.sh and RDAP only from fixtures in DIR "
+                   "(dns.json, crtsh.json, rdap/); any network call aborts the run")
+    p.add_argument("--demo", action="store_true", help="synthetic offline demo: seed example-demo.test, fixtures in "
+                   "examples/offline_demo/, fixed timestamp; no network")
+    p.add_argument("--fixed-time", metavar="ISO8601", help="pin all timestamps (e.g. 2026-09-30T00:00:00+00:00) so "
+                   "output is reproducible; mainly for --offline/--demo")
     p.add_argument("--version", action="version", version=f"%(prog)s {TOOL_VERSION}")
     return p.parse_args(argv)
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    if args.demo:
+        args.offline = args.offline or str(offline.DEMO_DIR)
+        args.domain = args.domain or offline.DEMO_SEED
+        args.fixed_time = args.fixed_time or offline.DEMO_FIXED_TIME
+    if not args.domain:
+        print("[!] a seed domain is required (or use --demo)", file=sys.stderr)
+        return 2
     try:
         seed = normalise_domain(args.domain)
     except ValueError as e:
         print(f"[!] {e}", file=sys.stderr)
         return 2
+    if args.fixed_time:
+        try:
+            _dt.datetime.fromisoformat(args.fixed_time)
+        except ValueError:
+            print(f"[!] --fixed-time '{args.fixed_time}' is not an ISO 8601 timestamp", file=sys.stderr)
+            return 2
 
+    if args.offline:
+        fixtures = pathlib.Path(args.offline)
+        if not (fixtures / "dns.json").exists():
+            print(f"[!] --offline: {fixtures}/dns.json not found", file=sys.stderr)
+            return 2
+        args.no_cache = True
+        args.ct_file = None if args.skip_ct else str(fixtures / "crtsh.json")
+        args.rdap_dir = str(fixtures / "rdap")
+        with offline.offline_session(fixtures, args.fixed_time):
+            return _run(args, seed, data_note=(
+                f"SYNTHETIC offline fixtures from `{fixtures.name}/` (no network used); "
+                "fictional/reserved names and documentation IP ranges only"))
+    if args.fixed_time:
+        collectors.set_fixed_time(_dt.datetime.fromisoformat(args.fixed_time))
+        try:
+            return _run(args, seed)
+        finally:
+            collectors.set_fixed_time(None)
+    return _run(args, seed)
+
+
+def _run(args: argparse.Namespace, seed: str, data_note: str = "") -> int:
     print(f"[*] osint-pivot-tool {TOOL_VERSION}")
     print(f"[*] Seed domain: {seed}")
+    if data_note:
+        print("[*] OFFLINE mode: fixtures only, network calls are blocked")
 
     cache = Cache(pathlib.Path(args.cache_dir), enabled=not args.no_cache, refresh=args.refresh)
-    result = RunResult(seed=seed, started=now_iso())
+    result = RunResult(seed=seed, started=now_iso(), data_note=data_note)
 
-    print("[*] Collecting DNS records (via recursive resolver)...")
+    print("[*] Collecting DNS records" + (" (offline fixtures)..." if data_note else " (via recursive resolver)..."))
     collect_dns(result, cache, nameserver=args.resolver, timeout=args.timeout, do_ptr=not args.no_ptr)
 
     discovered = set()

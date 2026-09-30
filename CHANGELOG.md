@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.2 (2026-09-30)
+
+CI and a fully offline demo. Rating rules are unchanged apart from the PSL fix below.
+
+### Added
+- `--demo`: runs the whole pipeline against synthetic fixtures in
+  `examples/offline_demo/` (seed `example-demo.test`, reserved/fictional names,
+  documentation IP ranges only) with a pinned timestamp.
+- `--offline DIR`: the same for your own fixtures (`dns.json`, `crtsh.json`, `rdap/`).
+  While it runs, sockets, DNS resolution and `requests` are replaced by a guard
+  that raises `NetworkBlockedError`, so no network call can happen silently.
+- `--fixed-time ISO8601`: pins all timestamps and certificate/domain age maths
+  so output is reproducible.
+- `samples/`: committed synthetic demo report (Markdown + CSV).
+- `tests/`: pytest suite (offline end-to-end, sample diff, determinism, no
+  network calls, fixture resolver, `normalise_domain`, self-check script);
+  `requirements-dev.txt` pins pytest and pyflakes.
+- GitHub Actions CI (`.github/workflows/ci.yml`): Python 3.9 and 3.12, pyflakes,
+  `test_rating.py`, pytest, offline demo, and a diff against `samples/`.
+
+### Fixed
+- Registrable domain for TLDs not on the Public Suffix List (`.test`,
+  `.internal`, ...) now follows the PSL default rule (`www.example-demo.test`
+  -> `example-demo.test`), instead of treating the whole host as the owner.
+- The crt.sh file log entry shows only the file name, not the full local path.
+
+### Changed
+- Reports from offline runs carry a SYNTHETIC banner and an accurate Method line.
+
 ## 0.3.1 (2026-09-30)
 
 Accuracy and safety fixes from a code review. No new data sources.

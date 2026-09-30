@@ -7,7 +7,7 @@ Keeping these in one small file means every other module agrees on what a
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-TOOL_VERSION_NUMBER = "0.3.1"
+TOOL_VERSION_NUMBER = "0.3.2"
 
 
 @dataclass
@@ -58,3 +58,5 @@ class RunResult:
     sections: Dict[str, List[str]] = field(default_factory=dict)
     cache_hits: int = 0
     cache_misses: int = 0
+    # Set for offline/demo runs so the report says the data is synthetic.
+    data_note: str = ""

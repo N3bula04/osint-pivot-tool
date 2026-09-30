@@ -52,8 +52,35 @@ def truncate(text: str, limit: int = 200) -> str:
     return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
 
 
+# Offline/demo hooks (see offline.py). None = normal behaviour.
+_FIXED_NOW: Optional[_dt.datetime] = None
+_RESOLVER_FACTORY = None
+
+
+def set_fixed_time(when: Optional[_dt.datetime]) -> None:
+    """Pin the clock used for timestamps and certificate/domain age maths (None = real time)."""
+    global _FIXED_NOW
+    if when is not None and when.tzinfo is None:
+        when = when.replace(tzinfo=_dt.timezone.utc)
+    _FIXED_NOW = when
+
+
+def set_resolver_factory(factory) -> None:
+    """Replace the DNS resolver (factory(nameserver, timeout) -> object with .resolve())."""
+    global _RESOLVER_FACTORY
+    _RESOLVER_FACTORY = factory
+
+
+def _utcnow() -> _dt.datetime:
+    return _FIXED_NOW if _FIXED_NOW is not None else _dt.datetime.now(_dt.timezone.utc)
+
+
+def _today() -> _dt.date:
+    return _utcnow().date()
+
+
 def now_iso() -> str:
-    return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
+    return _utcnow().replace(microsecond=0).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +142,8 @@ class Cache:
 
 
 def _make_resolver(nameserver: Optional[str], timeout: float) -> dns.resolver.Resolver:
+    if _RESOLVER_FACTORY is not None:
+        return _RESOLVER_FACTORY(nameserver, timeout)
     r = dns.resolver.Resolver()
     if nameserver:
         r.nameservers = [nameserver]
@@ -373,7 +402,7 @@ def collect_ct(result: RunResult, cache: Cache, ct_file: Optional[pathlib.Path] 
     seed = result.seed
     seed_reg = registrable_domain(seed)
     ts = now_iso()
-    today = _dt.date.today().isoformat()
+    today = _today().isoformat()
 
     def log(query: str, status: str, detail: str) -> None:
         result.log.append(LogEntry("crt.sh", query, status, detail, now_iso()))
@@ -382,7 +411,7 @@ def collect_ct(result: RunResult, cache: Cache, ct_file: Optional[pathlib.Path] 
     if ct_file is not None:
         try:
             entries = json.loads(pathlib.Path(ct_file).read_text(encoding="utf-8"))
-            log(f"file:{ct_file}", "ok", f"{len(entries)} entries loaded from file (no network)")
+            log(f"file:{pathlib.Path(ct_file).name}", "ok", f"{len(entries)} entries loaded from file (no network)")
         except (OSError, ValueError) as e:
             log(f"file:{ct_file}", "error", f"could not read crt.sh JSON: {e}")
             return set(), set()
@@ -739,7 +768,7 @@ def collect_rdap(result: RunResult, cache: Cache, rdap_dir: Optional[pathlib.Pat
     """Populate registration-data links and sections for the seed and its IPs."""
     seed = result.seed
     ts = now_iso()
-    today = _dt.date.today()
+    today = _today()
 
     def log(query: str, status: str, detail: str) -> None:
         result.log.append(LogEntry("RDAP", query, status, detail, now_iso()))

@@ -1,5 +1,7 @@
 # osint-pivot-tool
 
+[![CI](https://github.com/N3bula04/osint-pivot-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/N3bula04/osint-pivot-tool/actions/workflows/ci.yml)
+
 OSINT infrastructure pivot tool with evidence-rated links.
 
 Give it one seed domain. It collects public data about that domain from
@@ -17,7 +19,7 @@ infrastructure (CDNs, managed DNS, mail providers, cloud hosting) is flagged
 and downgraded. Sources that fail or return nothing are logged so gaps are
 visible. The tool never attributes activity to a named actor.
 
-**Current version: 0.3.1, Stage 3 (DNS + certificate transparency + RDAP).** This completes the version 1 scope. See `CHANGELOG.md` for what changed.
+**Current version: 0.3.2, Stage 3 (DNS + certificate transparency + RDAP).** This completes the version 1 scope. See `CHANGELOG.md` for what changed.
 
 ---
 
@@ -30,7 +32,7 @@ You need Python 3.9 or newer (3.10+ recommended). The three dependencies (`dnspy
 1. Download the tool as a ZIP: https://github.com/N3bula04/osint-pivot-tool/archive/refs/heads/main.zip
 2. Unzip it. You get a folder called `osint-pivot-tool-main`. Rename it to `osint-pivot-tool` if you like.
 3. **Windows:** double-click `setup.bat`. **Mac:** open Terminal, type `bash ` (with a space), drag `setup.sh` into the window, press Enter.
-4. Wait for `94/94 checks passed`. If any check fails, setup stops with `Self-check FAILED` and a non-zero exit code.
+4. Wait for `97/97 checks passed`. If any check fails, setup stops with `Self-check FAILED` and a non-zero exit code.
 5. Run a report from a terminal opened in that folder:
    - Windows: `.\run.bat example.com`
    - Mac: `bash run.sh example.com`
@@ -68,6 +70,31 @@ If PowerShell refuses to run the activate script, run
 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then try again.
 
 Each time you open a new terminal, re-run the `activate` line before using the tool.
+
+---
+
+## Offline demo
+
+See what the tool produces without touching the network:
+
+```bash
+python pivot.py --demo        # or: bash run.sh --demo  /  .\run.bat --demo
+```
+
+This runs the whole pipeline (DNS, certificate transparency, IP pivot, RDAP,
+rating, report) against committed **synthetic** fixtures in
+`examples/offline_demo/`. The seed is `example-demo.test`; every name is
+reserved or fictional and every IP is in a documentation range. Any attempt
+to open a network connection during the run raises an error. Timestamps are
+pinned, so the output always matches the committed sample in
+[`samples/`](samples/). The fixtures cover a CDN downgrade, a cloud netblock,
+shared and expired certificates, a possible origin IP (Medium), a shared IP
+confirmed by reverse DNS (High), a gov.sg Public Suffix List case, spoofed
+provider hostnames, and a CSV-injection-looking RDAP value.
+
+To replay your own saved fixtures instead: `python pivot.py SEED --offline DIR
+[--fixed-time 2026-09-30T00:00:00+00:00]`. DIR holds `dns.json`, `crtsh.json`
+and `rdap/`; see the docstring in `offline.py` for the format.
 
 ---
 
@@ -349,6 +376,11 @@ Do these by hand after a run to show human quality control over the tool.
 | `report.py` | Markdown and CSV writers. |
 | `models.py` | Small data classes shared by the modules above. |
 | `test_rating.py` | Offline self-check of rating rules, CT parsing, the IP pivot and RDAP parsing (`python test_rating.py`). |
+| `offline.py` | Offline/demo mode: fixture-backed DNS resolver, network guard, pinned clock. |
+| `tests/` | pytest suite: offline end-to-end run, sample diff, no-network guarantee, `normalise_domain` (`python -m pytest -q`; needs `requirements-dev.txt`). |
+| `examples/offline_demo/` | Synthetic fixtures for `--demo`. |
+| `samples/` | Committed synthetic demo report (Markdown + CSV); CI checks it matches regenerated output. |
+| `.github/workflows/ci.yml` | CI: Python 3.9 and 3.12; pyflakes, self-check, pytest, offline demo, sample diff. |
 | `examples/crtsh_sample_ietf.json` | Synthetic crt.sh output used by the self-check and for offline demos. |
 | `examples/rdap_sample/` | Synthetic RDAP responses in the `--rdap-dir` layout. |
 | `CHANGELOG.md` | What changed in each version. |

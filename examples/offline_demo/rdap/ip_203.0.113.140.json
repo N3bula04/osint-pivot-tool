@@ -1,0 +1,48 @@
+{
+ "objectClassName": "ip network",
+ "handle": "NET-DEMOCDN",
+ "startAddress": "203.0.113.128",
+ "endAddress": "203.0.113.255",
+ "ipVersion": "v4",
+ "name": "DEMOCDN-EDGE",
+ "type": "ASSIGNMENT",
+ "country": "ZZ",
+ "cidr0_cidrs": [
+  {
+   "v4prefix": "203.0.113.128",
+   "length": 25
+  }
+ ],
+ "entities": [
+  {
+   "objectClassName": "entity",
+   "handle": "NET-DEMOCDN-ORG",
+   "roles": [
+    "registrant"
+   ],
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "DemoCDN Edge Hosting (fictional)"
+     ],
+     [
+      "kind",
+      {},
+      "text",
+      "org"
+     ]
+    ]
+   ]
+  }
+ ]
+}

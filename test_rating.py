@@ -271,7 +271,13 @@ try:
 finally:
     _collectors.requests.get = _orig_get
 results.append(check("Retry-After seconds parsed", _collectors._parse_retry_after("30"), 30))
-results.append(check("User-Agent carries 0.3.1", "osint-pivot-tool/0.3.1" in _collectors.USER_AGENT, True))
+from models import TOOL_VERSION_NUMBER
+results.append(check("User-Agent carries the tool version", f"osint-pivot-tool/{TOOL_VERSION_NUMBER}" in _collectors.USER_AGENT, True))
+
+# ---- 0.3.2: TLDs not on the PSL (.test, .internal) use the PSL default rule "*" ----
+results.append(check("non-PSL TLD www.example-demo.test", registrable_domain("www.example-demo.test"), "example-demo.test"))
+results.append(check("non-PSL TLD same owner", same_owner("mx1.example-demo.test", "example-demo.test"), True))
+results.append(check("non-PSL TLD different owners", same_owner("partner-demo.test", "example-demo.test"), False))
 
 print(f"\n{sum(results)}/{len(results)} checks passed")
 raise SystemExit(0 if all(results) else 1)
