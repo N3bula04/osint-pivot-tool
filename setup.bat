@@ -10,7 +10,7 @@ echo [3/4] Installing dependencies...
 .venv\Scripts\python.exe -m pip install --quiet --upgrade pip
 .venv\Scripts\python.exe -m pip install --quiet -r requirements.txt || (pause & exit /b 1)
 echo [4/4] Running self-check...
-.venv\Scripts\python.exe test_rating.py
+.venv\Scripts\python.exe test_rating.py || (echo. & echo Self-check FAILED. Scroll up to see which checks failed. & pause & exit /b 1)
 echo.
 echo Setup complete. To run a report, open PowerShell in this folder and type:
 echo     .\run.bat example.com
