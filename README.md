@@ -1,8 +1,9 @@
 # osint-pivot-tool
 
-Passive OSINT infrastructure pivot tool with evidence-rated links.
+OSINT infrastructure pivot tool with evidence-rated links.
 
-Give it one seed domain. It collects passive, public data about that domain,
+Give it one seed domain. It collects public data about that domain from
+DNS (via your recursive resolver), certificate transparency and RDAP,
 pivots one hop to related domains and IPs, and writes:
 
 - a **Markdown report** you can read and hand to someone else, and
@@ -16,20 +17,20 @@ infrastructure (CDNs, managed DNS, mail providers, cloud hosting) is flagged
 and downgraded. Sources that fail or return nothing are logged so gaps are
 visible. The tool never attributes activity to a named actor.
 
-**Current version: Stage 3 (DNS + certificate transparency + RDAP).** This completes the version 1 scope.
+**Current version: 0.3.1, Stage 3 (DNS + certificate transparency + RDAP).** This completes the version 1 scope. See `CHANGELOG.md` for what changed.
 
 ---
 
 ## Setup
 
-You need Python 3.9 or newer.
+You need Python 3.9 or newer (3.10+ recommended). The three dependencies (`dnspython`, `requests`, `tldextract`) are pinned in `requirements.txt`.
 
 ### Fastest way (no git needed)
 
-1. Download the tool as a ZIP: https://github.com/N3bula04/osint-pivot-tool/archive/refs/heads/claude/stoic-hawking-n2hlmg.zip
-2. Unzip it. You get a folder called `osint-pivot-tool-claude-stoic-hawking-n2hlmg`. Rename it to `osint-pivot-tool` if you like.
+1. Download the tool as a ZIP: https://github.com/N3bula04/osint-pivot-tool/archive/refs/heads/main.zip
+2. Unzip it. You get a folder called `osint-pivot-tool-main`. Rename it to `osint-pivot-tool` if you like.
 3. **Windows:** double-click `setup.bat`. **Mac:** open Terminal, type `bash ` (with a space), drag `setup.sh` into the window, press Enter.
-4. Wait for `49/49 checks passed`.
+4. Wait for `94/94 checks passed`. If any check fails, setup stops with `Self-check FAILED` and a non-zero exit code.
 5. Run a report from a terminal opened in that folder:
    - Windows: `.\run.bat example.com`
    - Mac: `bash run.sh example.com`
@@ -42,21 +43,21 @@ The `run` script uses the private environment automatically, so you never need t
 
 ```bash
 # 1. Get the code
-git clone https://github.com/n3bula04/osint-pivot-tool.git
-cd osint-pivot-tool
+git clone https://github.com/N3bula04/osint-pivot-tool.git
+cd osint-pivot-tool   # the default branch is main
 
 # 2. Create an isolated Python environment (keeps this tool's packages separate)
 python3 -m venv .venv
 source .venv/bin/activate
 
-# 3. Install the one dependency
+# 3. Install the three pinned dependencies (dnspython, requests, tldextract)
 pip install -r requirements.txt
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-git clone https://github.com/n3bula04/osint-pivot-tool.git
+git clone https://github.com/N3bula04/osint-pivot-tool.git
 cd osint-pivot-tool
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -115,8 +116,10 @@ failure does not poison later runs. Delete the `cache/` folder, or use
 ## What Stage 1 collects
 
 All queries go through your recursive DNS resolver (your ISP's, or the one
-you pass with `--resolver`). The tool never connects to the target domain,
-never scans ports, never logs in anywhere.
+you pass with `--resolver`). The tool makes no direct connections to the
+target's web or application servers, never scans ports and never logs in
+anywhere. Note that your resolver may in turn query the target's
+authoritative nameservers, so DNS lookups are not invisible to the target.
 
 | Query | Link type produced | What it tells you |
 |---|---|---|
@@ -138,14 +141,14 @@ backoff, and caches the raw JSON.
 
 | Link type | What it means |
 |---|---|
-| `ct_subdomain` | A certificate was issued for a name under the seed. This is the main way to enumerate subdomains passively. |
+| `ct_subdomain` | A certificate was issued for a name under the seed. This is the main way to enumerate subdomains without touching them. |
 | `ct_shared_certificate` | Another domain appears on the same certificate as a seed-owned name. Whoever requested the certificate controlled both names at the time. |
 | `shared_ip` | A discovered domain resolves to the same IP as the seed right now. |
 
 For the IP pivot, the tool resolves up to `--max-resolve` discovered names
 (subdomains and non-bulk shared-certificate domains) and links any that land
 on one of the seed's IPs. These are ordinary DNS lookups through your
-resolver; nothing touches the target.
+resolver; the tool opens no connection to the discovered hosts themselves.
 
 Renewals produce many near-identical certificates, so the tool collapses
 them: one link per pair of names, citing the most recent certificate and
@@ -170,16 +173,21 @@ RDAP (Registration Data Access Protocol) is the structured successor to
 WHOIS, served by registries and the five regional internet registries. The
 tool asks `rdap.org`, a public redirector that forwards each query to the
 right authoritative server, for the seed domain and for the netblock behind
-each of the seed's IPs (at most 8). If rdap.org is down, it falls back to
-IANA's bootstrap files and queries the authoritative server directly. It
-pauses one second between requests and caches every answer for 24 hours.
+each of the seed's IPs (at most 8), plus the non-CDN IPs of related
+third-party hosts found in the IP pivot (at most 4 more). If rdap.org is
+down, it falls back to IANA's bootstrap files and queries the authoritative
+server directly. It pauses one second between requests and caches every
+answer for 24 hours. If any RDAP server answers HTTP 429 (rate limited), the
+tool stops making RDAP requests for the rest of the run, logs the remaining
+lookups as `skipped`, and remembers the `Retry-After` window (10 minutes if
+none is given) so later runs do not query RDAP until it has passed.
 
 | Link type | What it means |
 |---|---|
 | `rdap_registrar` | Which registrar sponsors the domain. Always Low on its own; useful only in combination. |
 | `rdap_nameserver` | The registry's view of the delegation. Rated like DNS NS. The report notes if it disagrees with what DNS answers. |
-| `rdap_registrant_org`, `rdap_registrant_email`, `rdap_technical_email`, ... | Unredacted contact details. An email at a different domain is a classic pivot (High); privacy-proxy addresses are Low. |
-| `rdap_netblock` | The IP's netblock and its holder. Hosting/cloud holders are Low and trigger a downgrade of the domain-to-IP link. A holder matching the seed's registrant is High. |
+| `rdap_registrant_org`, `rdap_registrant_email`, `rdap_technical_email`, ... | Unredacted contact details. An email at a different domain is a classic pivot, but often belongs to a registrar or MSP, so it is Medium; privacy-proxy addresses are Low. |
+| `rdap_netblock` | The IP's netblock and its holder. Hosting/cloud holders are Low and trigger a downgrade of the domain-to-IP link. A holder matching the seed's registrant organisation, or the seed's full name label as a whole word (generic words such as "online" or "data" excluded), is High. |
 
 The "Registration data (RDAP)" section of the report also shows registration,
 last-changed and expiry dates, domain age (with a warning under 90 days),
@@ -217,11 +225,20 @@ Downgrade rules currently applied:
 - A domain-to-IP link whose IP has generic hosting reverse DNS drops from High to Medium, flag `cloud_hosted_ip`.
 - A certificate with **more than 50 names**, or issued by a CDN, or carrying a CDN placeholder name such as `sni.cloudflaressl.com`: Low, flag `shared_bulk_certificate`. Related domains from such certificates are collapsed to one link per registrable domain and are not resolved in the IP pivot.
 - A certificate with **21 to 50 names**: Medium, flag `large_san_list`.
-- An **expired** certificate keeps its rating but is flagged `expired_certificate`, and the reason notes the relationship may be historical.
-- A `shared_ip` link inherits the seed IP's rating: shared CDN IP is Low, cloud-hosted IP is Medium, otherwise High.
-- RDAP shows the seed IP's netblock holder is a **hosting or cloud provider** (matched against a keyword list): the netblock link is Low with flag `bulk_hosting_netblock`, and the domain-to-IP link drops from High to Medium with flag `cloud_hosted_ip`.
+- An **expired** certificate is flagged `expired_certificate`. A shared certificate that would otherwise be High drops to Medium, because the relationship may be historical. Expired subdomain certificates keep their rating.
+- A `shared_ip` link is Medium by default. It is Low if the IP is a CDN address, Medium if it is cloud-hosted, and High only when reverse DNS (under the seed's own domain) or RDAP (netblock holder matches the seed) confirms the IP belongs to the seed.
+- A seed-owned host on a non-CDN IP the seed itself does not use is flagged `possible_origin_ip` and rated Medium; it becomes High (flag `origin_confirmed`) only when PTR or RDAP confirms the IP.
+- IPs of **third-party hosts** found in the IP pivot are Medium (flag `unverified_third_party_ip`) and are looked up in RDAP where the budget allows; a hosting/cloud netblock adds `cloud_hosted_ip`.
+- RDAP shows the seed IP's netblock holder is a **hosting or cloud provider** (matched as whole words against a keyword list): the netblock link is Low with flag `bulk_hosting_netblock`, and the domain-to-IP link drops from High to Medium with flag `cloud_hosted_ip`.
+- An unredacted RDAP contact email at a different domain: Medium (verify it is not a registrar, MSP or hosting mailbox).
 - RDAP contact email or organisation naming a **privacy/proxy service**: Low, flag `privacy_proxy`.
 - Registrar links are always Low, flag `shared_registrar`.
+
+Provider matching is a suffix match on label boundaries: `aspmx.l.google.com`
+matches `google.com`, but `mx.google.com.evil.net` and `ns1.myname.com` do not
+match `google.com` or `name.com`. "Same owner" uses the Public Suffix List
+(via `tldextract`'s bundled snapshot; no network fetch), so `shop-a.co.uk` and
+`shop-b.co.uk` are different owners.
 
 The provider lists in `rating.py` are starting points, not gospel. If you see
 a provider that should be there, add one line.
@@ -236,7 +253,7 @@ Do these by hand after a run to show human quality control over the tool.
    Run `dig example.com A +short`, `dig example.com MX +short`, `dig example.com NS +short`
    (macOS) or `nslookup -type=MX example.com` (Windows), or use an
    independent web tool such as Google's `https://dns.google/query?name=example.com&type=MX`.
-   The "Raw DNS records observed" table in the report should match. Differences
+   The "Raw records observed" table in the report should match. Differences
    usually mean a change in progress (TTL) or a resolver that filters answers.
 
 2. **Verify one shared-infrastructure flag.**
@@ -300,33 +317,42 @@ Do these by hand after a run to show human quality control over the tool.
 
 ## Safety and terms of use
 
-- Passive only. DNS lookups go through a recursive resolver; the tool never
-  contacts the target's own servers, never scans, never logs in.
+- No direct connections from this tool to the target's web/app servers; no
+  scanning, no logging in. DNS lookups go through a recursive resolver, which
+  may query the target's authoritative nameservers on your behalf. crt.sh and
+  RDAP are third-party services.
 - crt.sh is a free public service run by Sectigo. The tool makes two requests
   per seed, pauses between them, backs off on errors, identifies itself with a
   User-Agent, and caches results for 24 hours so re-runs cost crt.sh nothing.
 - RDAP servers are run by registries and RIRs with strict rate limits. The
-  tool makes one domain query plus one per seed IP (at most 8), pauses
-  between them, honours 429 responses by stopping rather than hammering, and
-  caches for 24 hours.
+  tool makes one domain query plus one per seed IP (at most 8) and per
+  non-CDN related-host IP (at most 4), pauses between them, stops all RDAP
+  requests for the run on the first HTTP 429 and respects `Retry-After` on
+  later runs, and caches for 24 hours.
 - The tool produces leads. The analyst decides what they mean.
 
 ## Roadmap
 
 - **Stage 1 (done):** DNS collection, one-hop reverse-DNS pivot, rating, Markdown + CSV output, cache.
 - **Stage 2 (done):** Certificate transparency via crt.sh; subdomain enumeration, shared-certificate pivot, shared-IP pivot.
-- **Stage 3 (this version):** RDAP registration data for the domain and each seed IP; netblock ownership sharpens the bulk-hosting downgrade.
-- **Ideas for version 2:** RDAP on the High-rated related domains to compare registrars and creation dates; a full Public Suffix List; passive DNS if you have an API key.
+- **Stage 3 (done):** RDAP registration data for the domain and each seed IP; netblock ownership sharpens the bulk-hosting downgrade.
+- **0.3.1:** accuracy fixes (suffix-based provider matching, Public Suffix List, whole-word netblock keywords, fewer over-confident High ratings), CSV formula-injection escaping, RDAP 429 back-off. See `CHANGELOG.md`.
+- **Ideas for version 2:** RDAP on the related domains to compare registrars and creation dates; passive DNS if you have an API key.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `pivot.py` | Command-line entry point and orchestration. |
-| `collectors.py` | Passive data collectors and the on-disk cache: DNS, crt.sh, IP pivot, RDAP. |
+| `collectors.py` | Data collectors and the on-disk cache: DNS, crt.sh, IP pivot, RDAP. |
 | `rating.py` | Analytical rules: confidence ratings and shared-infrastructure lists. |
 | `report.py` | Markdown and CSV writers. |
 | `models.py` | Small data classes shared by the modules above. |
 | `test_rating.py` | Offline self-check of rating rules, CT parsing, the IP pivot and RDAP parsing (`python test_rating.py`). |
 | `examples/crtsh_sample_ietf.json` | Synthetic crt.sh output used by the self-check and for offline demos. |
 | `examples/rdap_sample/` | Synthetic RDAP responses in the `--rdap-dir` layout. |
+| `CHANGELOG.md` | What changed in each version. |
+
+## How this was built
+
+Developed with AI assistance; the design, rating rules and tests were reviewed and tested by Jeremy.
