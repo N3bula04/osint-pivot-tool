@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: pyflakes
+        run: python -m pyflakes *.py tests/*.py
+
+      - name: Self-check (test_rating.py)
+        run: python test_rating.py
+
+      - name: pytest
+        run: python -m pytest -q
+
+      - name: Offline demo (no network)
+        run: python pivot.py --demo -o "$RUNNER_TEMP/demo"
+
+      - name: Committed sample matches regenerated output
+        run: |
+          set -e
+          for f in "$RUNNER_TEMP"/demo/*; do
+            echo "comparing samples/$(basename "$f")"
+            diff -u "samples/$(basename "$f")" "$f"
+          done
