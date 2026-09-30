@@ -1,0 +1,142 @@
+{
+ "192.0.2.10:PTR": {
+  "answers": [
+   "web1.example-demo.test."
+  ],
+  "status": "ok"
+ },
+ "192.0.2.25:PTR": {
+  "answers": [
+   "mx1.example-demo.test."
+  ],
+  "status": "ok"
+ },
+ "192.0.2.53:PTR": {
+  "answers": [
+   "ns1.example-demo.test."
+  ],
+  "status": "ok"
+ },
+ "198.51.100.50:PTR": {
+  "status": "nxdomain",
+  "answers": []
+ },
+ "2001:db8:c10d::5:PTR": {
+  "status": "nxdomain",
+  "answers": []
+ },
+ "203.0.113.140:PTR": {
+  "answers": [
+   "edge-140.democdn.test."
+  ],
+  "status": "ok"
+ },
+ "_dmarc.example-demo.test:TXT": {
+  "answers": [
+   "\"v=DMARC1; p=reject; rua=mailto:dmarc@reports.msp-demo.test\""
+  ],
+  "status": "ok"
+ },
+ "api.example-demo.test:A": {
+  "answers": [
+   "198.51.100.50"
+  ],
+  "status": "ok"
+ },
+ "api.example-demo.test:AAAA": {
+  "status": "empty",
+  "answers": []
+ },
+ "example-demo.test:A": {
+  "answers": [
+   "192.0.2.10",
+   "203.0.113.140"
+  ],
+  "status": "ok"
+ },
+ "example-demo.test:AAAA": {
+  "answers": [
+   "2001:db8:c10d::5"
+  ],
+  "status": "ok"
+ },
+ "example-demo.test:MX": {
+  "answers": [
+   "10 mx1.example-demo.test.",
+   "20 aspmx.l.google.com.mail-spoof.test."
+  ],
+  "status": "ok"
+ },
+ "example-demo.test:NS": {
+  "answers": [
+   "ns1.example-demo.test.",
+   "ns2.dns-host-demo.test."
+  ],
+  "status": "ok"
+ },
+ "example-demo.test:TXT": {
+  "answers": [
+   "\"v=spf1 mx include:_spf.salesforce.com.attacker.invalid include:mail.msp-demo.test -all\"",
+   "\"demo-site-verification=synthetic-token-0001\""
+  ],
+  "status": "ok"
+ },
+ "legacy-partner.test:A": {
+  "answers": [
+   "198.51.100.200"
+  ],
+  "status": "ok"
+ },
+ "legacy-partner.test:AAAA": {
+  "status": "empty",
+  "answers": []
+ },
+ "mx1.example-demo.test:A": {
+  "answers": [
+   "192.0.2.25"
+  ],
+  "status": "ok"
+ },
+ "mx1.example-demo.test:AAAA": {
+  "status": "empty",
+  "answers": []
+ },
+ "ns1.example-demo.test:A": {
+  "answers": [
+   "192.0.2.53"
+  ],
+  "status": "ok"
+ },
+ "ns1.example-demo.test:AAAA": {
+  "status": "empty",
+  "answers": []
+ },
+ "old.example-demo.test:A": {
+  "status": "nxdomain",
+  "answers": []
+ },
+ "old.example-demo.test:AAAA": {
+  "status": "nxdomain",
+  "answers": []
+ },
+ "partner-demo.test:A": {
+  "answers": [
+   "192.0.2.10"
+  ],
+  "status": "ok"
+ },
+ "partner-demo.test:AAAA": {
+  "status": "empty",
+  "answers": []
+ },
+ "www.example-demo.test:A": {
+  "answers": [
+   "203.0.113.140"
+  ],
+  "status": "ok"
+ },
+ "www.example-demo.test:AAAA": {
+  "status": "empty",
+  "answers": []
+ }
+}

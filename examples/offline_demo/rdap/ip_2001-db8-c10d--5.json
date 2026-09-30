@@ -1,0 +1,48 @@
+{
+ "objectClassName": "ip network",
+ "handle": "NET6-DEMOCLOUD",
+ "startAddress": "2001:db8:c10d::",
+ "endAddress": "2001:db8:c10d:ffff:ffff:ffff:ffff:ffff",
+ "ipVersion": "v6",
+ "name": "DEMOCLOUD-V6",
+ "type": "ASSIGNMENT",
+ "country": "ZZ",
+ "cidr0_cidrs": [
+  {
+   "v6prefix": "2001:db8:c10d::",
+   "length": 48
+  }
+ ],
+ "entities": [
+  {
+   "objectClassName": "entity",
+   "handle": "NET6-DEMOCLOUD-ORG",
+   "roles": [
+    "registrant"
+   ],
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "Demo Cloud Hosting Inc (fictional)"
+     ],
+     [
+      "kind",
+      {},
+      "text",
+      "org"
+     ]
+    ]
+   ]
+  }
+ ]
+}

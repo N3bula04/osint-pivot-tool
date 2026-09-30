@@ -1,0 +1,164 @@
+{
+ "objectClassName": "domain",
+ "handle": "DEMO-0001",
+ "ldhName": "EXAMPLE-DEMO.TEST",
+ "status": [
+  "client transfer prohibited"
+ ],
+ "secureDNS": {
+  "delegationSigned": false
+ },
+ "nameservers": [
+  {
+   "objectClassName": "nameserver",
+   "ldhName": "NS1.EXAMPLE-DEMO.TEST"
+  },
+  {
+   "objectClassName": "nameserver",
+   "ldhName": "NS2.DNS-HOST-DEMO.TEST"
+  }
+ ],
+ "events": [
+  {
+   "eventAction": "registration",
+   "eventDate": "2026-08-20T00:00:00Z"
+  },
+  {
+   "eventAction": "expiration",
+   "eventDate": "2027-08-20T00:00:00Z"
+  },
+  {
+   "eventAction": "last changed",
+   "eventDate": "2026-09-01T00:00:00Z"
+  }
+ ],
+ "entities": [
+  {
+   "objectClassName": "entity",
+   "handle": "R-DEMO",
+   "roles": [
+    "registrar"
+   ],
+   "publicIds": [
+    {
+     "type": "IANA Registrar ID",
+     "identifier": "9999"
+    }
+   ],
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "Demo Registrar (fictional)"
+     ]
+    ]
+   ],
+   "entities": [
+    {
+     "objectClassName": "entity",
+     "roles": [
+      "abuse"
+     ],
+     "vcardArray": [
+      "vcard",
+      [
+       [
+        "version",
+        {},
+        "text",
+        "4.0"
+       ],
+       [
+        "fn",
+        {},
+        "text",
+        "Abuse Desk"
+       ],
+       [
+        "email",
+        {},
+        "text",
+        "abuse@registrar-demo.test"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "objectClassName": "entity",
+   "handle": "C-DEMO-1",
+   "roles": [
+    "registrant"
+   ],
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "REDACTED FOR PRIVACY"
+     ],
+     [
+      "org",
+      {},
+      "text",
+      "Example Demo Ltd"
+     ]
+    ]
+   ]
+  },
+  {
+   "objectClassName": "entity",
+   "handle": "C-DEMO-2",
+   "roles": [
+    "technical"
+   ],
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "Hostmaster"
+     ],
+     [
+      "org",
+      {},
+      "text",
+      "=HYPERLINK(\"http://attacker.invalid/\",\"click me\")"
+     ],
+     [
+      "email",
+      {},
+      "text",
+      "hostmaster@msp-demo.test"
+     ]
+    ]
+   ]
+  }
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "objectClassName": "ip network",
+ "handle": "NET-DEMOCLOUD",
+ "startAddress": "198.51.100.128",
+ "endAddress": "198.51.100.255",
+ "ipVersion": "v4",
+ "name": "DEMOCLOUD-V4",
+ "type": "ASSIGNMENT",
+ "country": "ZZ",
+ "cidr0_cidrs": [
+  {
+   "v4prefix": "198.51.100.128",
+   "length": 25
+  }
+ ],
+ "entities": [
+  {
+   "objectClassName": "entity",
+   "handle": "NET-DEMOCLOUD-ORG",
+   "roles": [
+    "registrant"
+   ],
+   "vcardArray": [
+    "vcard",
+    [
+     [
+      "version",
+      {},
+      "text",
+      "4.0"
+     ],
+     [
+      "fn",
+      {},
+      "text",
+      "Demo Cloud Hosting Inc (fictional)"
+     ],
+     [
+      "kind",
+      {},
+      "text",
+      "org"
+     ]
+    ]
+   ]
+  }
+ ]
+}
