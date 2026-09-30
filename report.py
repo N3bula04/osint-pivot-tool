@@ -5,6 +5,7 @@ import pathlib
 from collections import Counter
 from typing import List
 
+from collectors import truncate
 from models import Link, RunResult
 from rating import confidence_counts
 
@@ -17,7 +18,26 @@ _CONF_ORDER = {"High": 0, "Medium": 1, "Low": 2}
 
 
 def _md_escape(text: str) -> str:
-    return text.replace("|", "\\|").replace("\n", " ")
+    """Make text safe inside a Markdown table cell or `code` span.
+
+    Pipes would split the cell, newlines would end the row, and a backtick
+    would close the code span early; backticks become a plain apostrophe.
+    """
+    return str(text).replace("|", "\\|").replace("\r", " ").replace("\n", " ").replace("`", "'")
+
+
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value) -> str:
+    """Neutralise spreadsheet formula injection (CSV injection).
+
+    A cell starting with = + - @ (or tab/CR) is treated as a formula by Excel,
+    LibreOffice and Google Sheets. Evidence text comes from DNS/CT/RDAP data an
+    adversary can control, so such cells are prefixed with an apostrophe.
+    """
+    text = str(value)
+    return "'" + text if text.startswith(_CSV_FORMULA_PREFIXES) else text
 
 
 def _sorted_links(links: List[Link]) -> List[Link]:
@@ -29,10 +49,10 @@ def write_csv(result: RunResult, path: pathlib.Path) -> None:
         w = csv.writer(fh)
         w.writerow(CSV_COLUMNS)
         for l in _sorted_links(result.links):
-            w.writerow([
+            w.writerow([_csv_safe(v) for v in (
                 l.source_entity, l.related_entity, l.link_type, l.evidence, l.data_source,
                 l.timestamp, l.confidence, l.reason, ";".join(l.flags),
-            ])
+            )])
 
 
 def write_markdown(result: RunResult, path: pathlib.Path, csv_name: str) -> None:
@@ -48,7 +68,8 @@ def write_markdown(result: RunResult, path: pathlib.Path, csv_name: str) -> None
     out.append(f"- **Run started:** {result.started}  ")
     out.append(f"- **Run finished:** {result.finished}  ")
     out.append(f"- **Stage:** {result.stage}  ")
-    out.append(f"- **Method:** passive only (no direct contact with the target)  ")
+    out.append("- **Method:** public third-party sources (DNS via recursive resolver, crt.sh, RDAP); "
+               "no direct connections from this tool to the target's web/app servers  ")
     out.append(f"- **Cache:** {result.cache_hits} hit(s), {result.cache_misses} miss(es)  ")
     out.append(f"- **Links CSV:** `{csv_name}`\n")
 
@@ -118,7 +139,7 @@ def write_markdown(result: RunResult, path: pathlib.Path, csv_name: str) -> None
     out.append("|---|---|---|---|---|")
     for e in result.log:
         marker = "" if e.status in ("ok",) else " ⚠" if e.status in ("timeout", "error") else " ·"
-        out.append(f"| {e.source} | `{_md_escape(e.query)}` | {e.status}{marker} | {_md_escape(e.detail)} | {e.timestamp} |")
+        out.append(f"| {e.source} | `{_md_escape(e.query)}` | {e.status}{marker} | {_md_escape(truncate(e.detail))} | {e.timestamp} |")
     out.append("")
 
     by_type = Counter(l.link_type for l in links)

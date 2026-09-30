@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""osint-pivot-tool: passive infrastructure pivoting from one seed domain.
+"""osint-pivot-tool: OSINT infrastructure pivoting from one seed domain, using public third-party sources.
 
 Usage:
     python pivot.py example.com
@@ -18,12 +18,12 @@ import pathlib
 import re
 import sys
 
-from collectors import Cache, collect_ct, collect_dns, collect_rdap, collect_shared_ips, now_iso
-from models import RunResult
+from collectors import Cache, collect_ct, collect_dns, collect_rdap, collect_shared_ips, now_iso, truncate
+from models import TOOL_VERSION_NUMBER, RunResult
 from rating import confidence_counts, rate_all, same_owner
 from report import write_reports
 
-TOOL_VERSION = "0.3.0 (Stage 3: DNS + crt.sh + RDAP)"
+TOOL_VERSION = f"{TOOL_VERSION_NUMBER} (Stage 3: DNS + crt.sh + RDAP)"
 
 _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?!-)([a-z0-9-]{1,63}(?<!-)\.)+[a-z0-9-]{2,63}$"
@@ -48,7 +48,7 @@ def normalise_domain(raw: str) -> str:
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         prog="pivot.py",
-        description="Passive OSINT infrastructure pivot tool. Produces a Markdown report and a CSV of evidence-backed links.",
+        description="OSINT infrastructure pivot tool (DNS via your resolver, crt.sh, RDAP; no direct connections to the target's web/app servers). Produces a Markdown report and a CSV of evidence-backed links.",
     )
     p.add_argument("domain", help="seed domain, e.g. example.com")
     p.add_argument("-o", "--output-dir", default="reports", help="where to write reports (default: reports/)")
@@ -83,7 +83,7 @@ def main(argv=None) -> int:
     cache = Cache(pathlib.Path(args.cache_dir), enabled=not args.no_cache, refresh=args.refresh)
     result = RunResult(seed=seed, started=now_iso())
 
-    print("[*] Collecting DNS records (passive, via recursive resolver)...")
+    print("[*] Collecting DNS records (via recursive resolver)...")
     collect_dns(result, cache, nameserver=args.resolver, timeout=args.timeout, do_ptr=not args.no_ptr)
 
     discovered = set()
@@ -124,7 +124,7 @@ def main(argv=None) -> int:
     print(f"[*] Links: {len(result.links)}  (High {high} / Medium {med} / Low {low})")
     for e in result.log:
         tag = {"ok": " ", "cached": " ", "empty": "-", "nxdomain": "-"}.get(e.status, "!")
-        print(f"    [{tag}] {e.query:<45} {e.status:<9} {e.detail}")
+        print(f"    [{tag}] {e.query:<45} {e.status:<9} {truncate(e.detail)}")
     if failed:
         print(f"[!] {len(failed)} query/queries failed; gaps are recorded in the report.")
     print(f"[*] Report:  {md_path}")

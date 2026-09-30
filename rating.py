@@ -52,16 +52,13 @@ SHARED_CDN_RANGES = {
 # popular DNS host", not "is related to the other customers of that host".
 SHARED_NS_PROVIDERS = {
     "cloudflare.com": "Cloudflare DNS",
-    "awsdns-": "Amazon Route 53",
     "googledomains.com": "Google Domains DNS",
     "google.com": "Google Cloud DNS",
     "domaincontrol.com": "GoDaddy DNS",
     "registrar-servers.com": "Namecheap DNS",
     "nsone.net": "NS1",
     "dnsimple.com": "DNSimple",
-    "ultradns": "UltraDNS",
     "akam.net": "Akamai DNS",
-    "azure-dns": "Azure DNS",
     "dns.he.net": "Hurricane Electric DNS",
     "digitalocean.com": "DigitalOcean DNS",
     "wixdns.net": "Wix DNS",
@@ -82,6 +79,16 @@ SHARED_NS_PROVIDERS = {
     "siteground.net": "SiteGround DNS",
 }
 
+# Some managed DNS providers spread their nameservers over many TLDs
+# (ns-1.awsdns-00.com / .net / .org / .co.uk). These patterns are matched
+# against the registrable label only (the "awsdns-00" in awsdns-00.co.uk),
+# never as a free substring, so "ns1.awsdns-00.com.evil.net" does not match.
+SHARED_NS_LABEL_PATTERNS = {
+    r"awsdns-\d{2}": "Amazon Route 53",
+    r"ultradns": "UltraDNS",
+    r"azure-dns": "Azure DNS",
+}
+
 # Mail providers. Sharing Google or Microsoft mail servers with another
 # domain is not a relationship; it is the default state of the internet.
 SHARED_MAIL_PROVIDERS = {
@@ -94,7 +101,8 @@ SHARED_MAIL_PROVIDERS = {
     "messagelabs.com": "Broadcom/Symantec Email Security",
     "barracudanetworks.com": "Barracuda",
     "zoho.com": "Zoho Mail",
-    "zohomail": "Zoho Mail",
+    "zohomail.com": "Zoho Mail",
+    "zohomail.eu": "Zoho Mail",
     "protonmail.ch": "Proton Mail",
     "secureserver.net": "GoDaddy Email",
     "emailsrvr.com": "Rackspace Email",
@@ -130,16 +138,16 @@ SHARED_MAIL_PROVIDERS = {
 # Reverse-DNS names from hosting providers are auto-generated and tell you
 # only who owns the netblock, not who rents the server.
 GENERIC_PTR_PATTERNS = [
-    (re.compile(r"amazonaws\.com$"), "Amazon EC2 auto-generated rDNS"),
-    (re.compile(r"googleusercontent\.com$"), "Google Cloud auto-generated rDNS"),
-    (re.compile(r"linode\.com$|linodeusercontent\.com$"), "Linode auto-generated rDNS"),
-    (re.compile(r"digitalocean\.com$"), "DigitalOcean auto-generated rDNS"),
-    (re.compile(r"ovh\.net$|ovh\.ca$"), "OVH auto-generated rDNS"),
-    (re.compile(r"hetzner\.com$|your-server\.de$|clients\.your-server\.de$"), "Hetzner auto-generated rDNS"),
-    (re.compile(r"vultr\.com$|vultrusercontent\.com$"), "Vultr auto-generated rDNS"),
-    (re.compile(r"cloudfront\.net$"), "Amazon CloudFront edge"),
-    (re.compile(r"akamaitechnologies\.com$"), "Akamai edge"),
-    (re.compile(r"1e100\.net$"), "Google edge"),
+    (re.compile(r"(^|\.)amazonaws\.com$"), "Amazon EC2 auto-generated rDNS"),
+    (re.compile(r"(^|\.)googleusercontent\.com$"), "Google Cloud auto-generated rDNS"),
+    (re.compile(r"(^|\.)linode\.com$|(^|\.)linodeusercontent\.com$"), "Linode auto-generated rDNS"),
+    (re.compile(r"(^|\.)digitalocean\.com$"), "DigitalOcean auto-generated rDNS"),
+    (re.compile(r"(^|\.)ovh\.net$|(^|\.)ovh\.ca$"), "OVH auto-generated rDNS"),
+    (re.compile(r"(^|\.)hetzner\.com$|(^|\.)your-server\.de$|(^|\.)clients\.your-server\.de$"), "Hetzner auto-generated rDNS"),
+    (re.compile(r"(^|\.)vultr\.com$|(^|\.)vultrusercontent\.com$"), "Vultr auto-generated rDNS"),
+    (re.compile(r"(^|\.)cloudfront\.net$"), "Amazon CloudFront edge"),
+    (re.compile(r"(^|\.)akamaitechnologies\.com$"), "Akamai edge"),
+    (re.compile(r"(^|\.)1e100\.net$"), "Google edge"),
     (re.compile(r"static\..*\.(com|net)$"), "Generic static-IP rDNS"),
     (re.compile(r"\d{1,3}[-.]\d{1,3}[-.]\d{1,3}[-.]\d{1,3}"), "IP address embedded in hostname (auto-generated)"),
     (re.compile(r"^ip-?\d"), "IP-style hostname (auto-generated)"),
@@ -148,17 +156,33 @@ GENERIC_PTR_PATTERNS = [
 
 # Netblock holders that rent address space to the public. An IP inside one of
 # these blocks says "hosted at provider X", not "owned by the same people".
+# Matched as whole words (see _has_keyword), so "colocation" does not fire on
+# "Colombia Movil". Bare generic words such as "cloud", "server" and "colo"
+# are deliberately absent: they matched far too many ordinary company names.
 BULK_HOSTING_KEYWORDS = [
     "amazon", "aws", "google", "microsoft", "azure", "cloudflare", "fastly", "akamai",
-    "digitalocean", "linode", "akamai connected cloud", "vultr", "choopa", "constant",
+    "digitalocean", "linode", "akamai connected cloud", "vultr", "choopa", "the constant company",
     "ovh", "hetzner", "leaseweb", "godaddy", "namecheap", "hostinger", "ionos", "1&1",
     "alibaba", "aliyun", "tencent", "huawei", "oracle", "ibm cloud", "softlayer",
     "rackspace", "contabo", "scaleway", "online s.a.s", "upcloud", "kamatera", "psychz",
     "quadranet", "colocrossing", "hostwinds", "m247", "datacamp", "cdn77", "edgecast",
     "stackpath", "sucuri", "imperva", "incapsula", "wix", "squarespace", "shopify",
-    "webflow", "vercel", "netlify", "github", "heroku", "salesforce", "hosting", "cloud",
-    "datacenter", "data center", "server", "colocation", "colo", "vps", "dedicated",
+    "webflow", "vercel", "netlify", "github", "heroku", "salesforce", "hosting",
+    "web hosting", "cloud services", "cloud computing", "datacenter", "data center",
+    "colocation", "vps", "dedicated servers",
 ]
+
+# Words too generic to count as "the seed's name appears in the netblock
+# holder". Without this, seed online.com would match "Hetzner Online GmbH"
+# and data.com would match "Amazon Data Services".
+GENERIC_NAME_WORDS = {
+    "online", "data", "cloud", "net", "network", "networks", "web", "host", "hosting", "server",
+    "servers", "service", "services", "internet", "digital", "global", "tech", "technology",
+    "technologies", "systems", "system", "group", "telecom", "communications", "solutions",
+    "media", "mail", "info", "home", "shop", "store", "world", "international", "company",
+    "corp", "inc", "limited", "ltd", "llc", "gmbh", "business", "center", "centre",
+}
+SEED_NAME_MIN_LEN = 4
 
 # Privacy / proxy services that stand in for the real registrant.
 PRIVACY_PROXY_KEYWORDS = [
@@ -167,17 +191,26 @@ PRIVACY_PROXY_KEYWORDS = [
     "anonymize", "privateregistration", "whoisprivacy", "identity shield", "registrant of",
 ]
 
-# Two-level public suffixes we handle when working out the "registrable"
-# part of a domain. Not exhaustive; enough for common cases. (Stage 2 or 3
-# could swap in a full Public Suffix List if needed.)
-TWO_LEVEL_SUFFIXES = {
+# Registrable-domain logic uses the Public Suffix List via tldextract, from
+# the snapshot bundled inside the package: no network fetch, no cache writes.
+# If tldextract is missing, a small built-in list of two-level suffixes is
+# used instead so the tool still runs (less accurately).
+try:
+    import tldextract as _tldextract
+    _PSL = _tldextract.TLDExtract(cache_dir=None, suffix_list_urls=(), fallback_to_snapshot=True)
+except Exception:  # ImportError, or an unexpected packaging problem
+    _PSL = None
+
+# Offline fallback only. Not exhaustive.
+FALLBACK_TWO_LEVEL_SUFFIXES = {
     "co.uk", "org.uk", "ac.uk", "gov.uk", "ltd.uk", "plc.uk", "me.uk", "net.uk",
     "com.au", "net.au", "org.au", "edu.au", "gov.au",
     "co.nz", "net.nz", "org.nz", "govt.nz",
     "co.za", "org.za", "co.in", "net.in", "org.in", "co.jp", "ne.jp", "or.jp",
-    "com.br", "com.mx", "com.ar", "com.cn", "com.hk", "com.sg", "com.tr",
-    "co.il", "co.kr", "com.tw", "com.my", "com.ph", "com.pk", "com.ng",
-    "gov.au", "org.br", "net.br",
+    "com.br", "com.mx", "com.ar", "com.cn", "com.hk", "com.tr",
+    "com.sg", "gov.sg", "edu.sg", "org.sg", "net.sg", "per.sg",
+    "co.il", "co.kr", "com.tw", "com.my", "gov.my", "com.ph", "com.pk", "com.ng",
+    "org.br", "net.br", "gov.br", "gov.in", "gov.cn", "gov.hk", "gov.za",
 }
 
 # ---------------------------------------------------------------------------
@@ -185,15 +218,60 @@ TWO_LEVEL_SUFFIXES = {
 # ---------------------------------------------------------------------------
 
 
-def registrable_domain(hostname: str) -> str:
-    """Return the owner-level part of a hostname, e.g. mail.example.co.uk -> example.co.uk."""
-    h = hostname.lower().rstrip(".")
+def _is_ip(text: str) -> bool:
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except ValueError:
+        return False
+
+
+def _split_registrable(hostname: str) -> Tuple[str, str]:
+    """Return (label, suffix) for the registrable part, e.g. ('moh', 'gov.sg').
+
+    Either part may be empty for IPs, bare suffixes or single-label names.
+    """
+    h = hostname.lower().strip().rstrip(".")
+    if not h or _is_ip(h):
+        return "", ""
+    if _PSL is not None:
+        r = _PSL(h)
+        return r.domain, r.suffix
     parts = h.split(".")
-    if len(parts) <= 2:
-        return h
-    if ".".join(parts[-2:]) in TWO_LEVEL_SUFFIXES:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:])
+    if len(parts) >= 3 and ".".join(parts[-2:]) in FALLBACK_TWO_LEVEL_SUFFIXES:
+        return parts[-3], ".".join(parts[-2:])
+    if len(parts) >= 2:
+        return parts[-2], parts[-1]
+    return "", ""
+
+
+def registrable_domain(hostname: str) -> str:
+    """Return the owner-level part of a hostname, e.g. mail.example.co.uk -> example.co.uk.
+
+    IPs, bare public suffixes and single-label names are returned unchanged.
+    """
+    h = hostname.lower().strip().rstrip(".")
+    label, suffix = _split_registrable(h)
+    if label and suffix:
+        return f"{label}.{suffix}"
+    return h
+
+
+def registrable_label(hostname: str) -> str:
+    """The name part of the registrable domain: 'moh' for www.shop-a.co.uk."""
+    return _split_registrable(hostname)[0]
+
+
+def host_in_domain(hostname: str, domain: str) -> bool:
+    """True if hostname is `domain` itself or a name under it (label-boundary suffix match)."""
+    h = hostname.lower().strip().rstrip(".")
+    d = domain.lower().strip().rstrip(".")
+    return bool(d) and (h == d or h.endswith("." + d))
+
+
+def _has_keyword(text: str, keyword: str) -> bool:
+    """Whole-word match: the keyword must not be glued to other letters or digits."""
+    return re.search(r"(?<![a-z0-9])" + re.escape(keyword) + r"(?![a-z0-9])", text) is not None
 
 
 def same_owner(host_a: str, host_b: str) -> bool:
@@ -213,11 +291,22 @@ def shared_cdn_provider(ip: str) -> Optional[str]:
     return None
 
 
-def _match_provider(hostname: str, table: dict) -> Optional[str]:
-    h = hostname.lower().rstrip(".")
-    for needle, label in table.items():
-        if needle in h:
-            return label
+def _match_provider(hostname: str, table: dict, label_patterns: Optional[dict] = None) -> Optional[str]:
+    """Return the provider label if hostname is the provider's domain or a name under it.
+
+    Suffix match on a label boundary only: mx.google.com.evil.net and
+    ns1.myname.com do NOT match google.com / name.com.
+    """
+    h = hostname.lower().strip().rstrip(".")
+    # Longest key first, so "mail.protection.outlook.com" wins over "outlook.com".
+    for domain in sorted(table, key=len, reverse=True):
+        if host_in_domain(h, domain):
+            return table[domain]
+    if label_patterns:
+        label = registrable_label(h)
+        for pattern, name in label_patterns.items():
+            if label and re.fullmatch(pattern, label):
+                return name
     return None
 
 
@@ -227,6 +316,24 @@ def generic_ptr_reason(hostname: str) -> Optional[str]:
         if pattern.search(h):
             return label
     return None
+
+
+def _holder_matches_seed(holder_text: str, registrant_org: str, seed: str) -> bool:
+    """Does the netblock holder name the seed's organisation?
+
+    Registrant org: must appear as whole words and not be a privacy placeholder.
+    Seed name: the full registrable label (e.g. 'ietf' for ietf.org), at least
+    SEED_NAME_MIN_LEN characters, not a generic word, matched as a whole word.
+    """
+    holder_text = holder_text.lower()
+    org = (registrant_org or "").lower().strip()
+    if (len(org) >= SEED_NAME_MIN_LEN and org not in GENERIC_NAME_WORDS
+            and not any(k in org for k in PRIVACY_PROXY_KEYWORDS) and _has_keyword(holder_text, org)):
+        return True
+    label = registrable_label(seed)
+    if len(label) < SEED_NAME_MIN_LEN or label in GENERIC_NAME_WORDS:
+        return False
+    return _has_keyword(holder_text, label)
 
 
 # ---------------------------------------------------------------------------
@@ -246,14 +353,22 @@ def rate(link: Link, seed: str) -> Link:
             conf = "Low"
             reason = f"IP is in a published {cdn} anycast/CDN range shared by many unrelated tenants."
             flags.append("shared_cdn")
+        elif link.meta.get("seed_owned_host") and link.meta.get("outside_seed_ips"):
+            # Upgraded to High in rate_all only if PTR or RDAP confirms the IP.
+            conf = "Medium"
+            reason = ("A host under the seed's own domain resolves to a non-CDN IP the seed itself does not use; "
+                      "this may be the real origin server behind a CDN. Not yet confirmed by PTR or RDAP. Verify.")
+            flags.append("possible_origin_ip")
+        elif "seed_owned_host" in link.meta and not link.meta.get("seed_owned_host"):
+            # A third-party name found via CT and resolved in the IP pivot.
+            conf = "Medium"
+            reason = ("DNS answer (recursive resolver) for a related third-party domain. The IP has not been "
+                      "checked against PTR/RDAP here, so shared or cloud hosting is not ruled out. Verify.")
+            flags.append("unverified_third_party_ip")
         else:
             conf = "High"
-            reason = ("Authoritative DNS answer ties the domain directly to this IP. "
-                      "Check for bulk hosting before pivoting (RDAP in Stage 3).")
-            if link.meta.get("seed_owned_host") and link.meta.get("outside_seed_ips"):
-                reason = ("A host under the seed's own domain resolves to a non-CDN IP the seed itself does not use; "
-                          "this is often the real origin server behind a CDN. Strong pivot; confirm with RDAP/PTR.")
-                flags.append("possible_origin_ip")
+            reason = ("DNS answer (recursive resolver) ties the domain directly to this IP. "
+                      "Check the RDAP netblock for bulk hosting before pivoting.")
 
     elif lt == "dns_ptr":
         # source_entity is the IP, related_entity is the hostname from rDNS
@@ -283,7 +398,7 @@ def rate(link: Link, seed: str) -> Link:
             reason = "Mail is handled by a third-party host not in the known-provider list; could be a smaller shared provider or a related organisation."
 
     elif lt == "dns_ns":
-        provider = _match_provider(related, SHARED_NS_PROVIDERS)
+        provider = _match_provider(related, SHARED_NS_PROVIDERS, SHARED_NS_LABEL_PATTERNS)
         if same_owner(related, seed):
             conf = "High"
             reason = "Nameserver is under the seed's own domain (self-hosted DNS); strong ownership indicator."
@@ -353,7 +468,9 @@ def rate(link: Link, seed: str) -> Link:
             reason = ("Both names sit on the same certificate; the requester proved control of both at issuance "
                       "(CA domain validation).")
         if link.meta.get("expired"):
-            reason += " Certificate has expired, so the relationship may be historical."
+            if conf == "High":
+                conf = "Medium"
+            reason += " Certificate has expired, so the relationship may be historical; confirm it still holds."
             flags.append("expired_certificate")
 
     elif lt == "rdap_registrar":
@@ -363,7 +480,7 @@ def rate(link: Link, seed: str) -> Link:
 
     elif lt == "rdap_nameserver":
         # Same rules as DNS NS: the registry's view of the delegation.
-        provider = _match_provider(related, SHARED_NS_PROVIDERS)
+        provider = _match_provider(related, SHARED_NS_PROVIDERS, SHARED_NS_LABEL_PATTERNS)
         if same_owner(related, seed):
             conf, reason = "High", "Registry lists a nameserver under the seed's own domain (self-hosted DNS)."
         elif provider:
@@ -382,9 +499,9 @@ def rate(link: Link, seed: str) -> Link:
         elif low.split("@")[-1] == registrable_domain(seed) or same_owner(low.split("@")[-1], seed):
             conf, reason = "Medium", "Contact email is under the seed's own domain; confirms ownership but is not a pivot to anything new."
         else:
-            conf = "High"
+            conf = "Medium"
             reason = ("Unredacted contact email at a different domain. Searching other registrations for this "
-                      "address is a classic pivot. Verify it is not a registrar or hosting-company mailbox.")
+                      "address is a classic pivot, but it is often a registrar, MSP or hosting-company mailbox. Verify.")
 
     elif lt.startswith("rdap_") and lt.endswith("_org"):
         low = related.lower()
@@ -401,12 +518,11 @@ def rate(link: Link, seed: str) -> Link:
         name = str(link.meta.get("name", "")).lower()
         reg_org = str(link.meta.get("registrant_org", "")).lower()
         holder_text = f"{owner} {name}"
-        seed_word = registrable_domain(seed).split(".")[0]
-        if reg_org and reg_org in holder_text or (len(seed_word) > 3 and seed_word in holder_text):
+        if _holder_matches_seed(holder_text, reg_org, seed) and not link.meta.get("related_ip"):
             conf = "High"
             reason = "Netblock holder name matches the seed's registrant/name; the IP space appears dedicated to the same organisation."
             flags.append("dedicated_netblock")
-        elif any(k in holder_text for k in BULK_HOSTING_KEYWORDS):
+        elif any(_has_keyword(holder_text, k) for k in BULK_HOSTING_KEYWORDS):
             conf = "Low"
             reason = f"Netblock holder '{link.meta.get('owner') or link.meta.get('name')}' is a hosting/cloud provider; many unrelated tenants share this space."
             flags.append("bulk_hosting_netblock")
@@ -415,9 +531,10 @@ def rate(link: Link, seed: str) -> Link:
             reason = "Netblock holder is neither the seed organisation nor a known hosting provider; could be an ISP, a reseller or a related entity. Verify."
 
     elif lt == "shared_ip":
-        # meta["ip_flags"] is filled by rate_all once IP links have been rated
-        conf = "High"
-        reason = "Both domains resolve to the same IP address right now."
+        # Final rating is set in rate_all, once the IP's own links (PTR, RDAP) are rated.
+        conf = "Medium"
+        reason = ("Both domains resolve to the same IP address right now, but neither PTR nor RDAP confirms the IP "
+                  "is dedicated to the seed; shared hosting is not ruled out. Verify.")
 
     link.confidence = conf
     link.reason = reason
@@ -435,28 +552,42 @@ def rate_all(links: List[Link], seed: str) -> List[Link]:
     """
     for l in links:
         rate(l, seed)
+
+    # What PTR and RDAP say about each IP.
     cloud_ips = {l.source_entity for l in links
                  if l.link_type == "dns_ptr" and "generic_hosting_rdns" in l.flags}
-    for l in links:
-        if l.link_type in ("dns_a", "dns_aaaa") and l.confidence == "High" and l.related_entity in cloud_ips:
-            l.confidence = "Medium"
-            l.reason = ("Authoritative DNS answer, but reverse DNS shows a cloud/hosting provider IP; "
-                        "likely dedicated today, yet cloud IPs are reassigned often. Verify before pivoting.")
-            l.flags.append("cloud_hosted_ip")
-
-    # Cross-link rule 3: RDAP says the seed's IP sits in a hosting/cloud netblock.
-    # The domain -> IP link drops from High to Medium (bulk hosting is weak evidence).
     bulk_ips = {l.source_entity for l in links
                 if l.link_type == "rdap_netblock" and "bulk_hosting_netblock" in l.flags}
+    # "Confirmed" = reverse DNS under the seed's own domain, or an RDAP netblock
+    # whose holder matches the seed organisation.
+    confirmed_ips = {l.source_entity for l in links
+                     if (l.link_type == "dns_ptr" and l.confidence == "High")
+                     or (l.link_type == "rdap_netblock" and "dedicated_netblock" in l.flags)}
+
     for l in links:
-        if l.link_type in ("dns_a", "dns_aaaa") and l.confidence == "High" and l.related_entity in bulk_ips:
+        if l.link_type not in ("dns_a", "dns_aaaa"):
+            continue
+        ip = l.related_entity
+        # Cross-link rule 1: reverse DNS shows a cloud/hosting provider IP.
+        if ip in cloud_ips and l.confidence != "Low" and "cloud_hosted_ip" not in l.flags:
             l.confidence = "Medium"
-            l.reason = ("Authoritative DNS answer, but RDAP shows the IP belongs to a hosting/cloud provider's "
+            l.reason = ("DNS answer (recursive resolver), but reverse DNS shows a cloud/hosting provider IP; "
+                        "likely dedicated today, yet cloud IPs are reassigned often. Verify before pivoting.")
+            l.flags.append("cloud_hosted_ip")
+        # Cross-link rule 3: RDAP says the IP sits in a hosting/cloud netblock.
+        elif ip in bulk_ips and l.confidence != "Low" and "cloud_hosted_ip" not in l.flags:
+            l.confidence = "Medium"
+            l.reason = ("DNS answer (recursive resolver), but RDAP shows the IP belongs to a hosting/cloud provider's "
                         "netblock; shared or reassignable space. Verify before pivoting.")
             l.flags.append("cloud_hosted_ip")
+        # Possible origin IP: only High once PTR or RDAP confirms it belongs to the seed.
+        elif "possible_origin_ip" in l.flags and ip in confirmed_ips:
+            l.confidence = "High"
+            l.reason = ("A host under the seed's own domain resolves to a non-CDN IP the seed itself does not use, "
+                        "and PTR/RDAP ties that IP to the seed; likely the real origin server behind a CDN.")
+            l.flags.append("origin_confirmed")
 
     # Cross-link rule 2: a shared-IP link is only as strong as the IP itself.
-    # If the seed's IP is a CDN or cloud address, sharing it means little.
     ip_rating = {}
     for l in links:
         if l.link_type in ("dns_a", "dns_aaaa") and l.source_entity == seed:
@@ -464,17 +595,22 @@ def rate_all(links: List[Link], seed: str) -> List[Link]:
     for l in links:
         if l.link_type != "shared_ip":
             continue
-        ip = l.evidence.split("-> ", 1)[1].split(";")[0].strip() if "-> " in l.evidence else ""
-        conf, flags = ip_rating.get(ip, ("High", []))
+        ip = str(l.meta.get("ip", ""))
+        conf, flags = ip_rating.get(ip, ("Medium", []))
         if "shared_cdn" in flags:
             l.confidence = "Low"
             l.reason = "Both domains resolve to the same CDN anycast IP; thousands of unrelated sites share it."
             l.flags.append("shared_cdn")
-        elif "cloud_hosted_ip" in flags:
+        elif "cloud_hosted_ip" in flags or ip in cloud_ips or ip in bulk_ips:
             l.confidence = "Medium"
             l.reason = ("Both domains resolve to the same cloud-provider IP; probably one tenant today, "
                         "but shared load balancers and IP reuse are common. Verify.")
             l.flags.append("cloud_hosted_ip")
+        elif ip in confirmed_ips:
+            l.confidence = "High"
+            l.reason = ("Both domains resolve to the same IP right now, and PTR/RDAP ties that IP to the seed "
+                        "organisation; the other domain is likely hosted on the seed's own infrastructure.")
+        # otherwise keep the Medium default from rate()
     return links
 
 
