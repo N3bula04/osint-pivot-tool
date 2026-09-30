@@ -68,11 +68,20 @@ def write_markdown(result: RunResult, path: pathlib.Path, csv_name: str) -> None
     out.append(f"- **Run started:** {result.started}  ")
     out.append(f"- **Run finished:** {result.finished}  ")
     out.append(f"- **Stage:** {result.stage}  ")
-    out.append("- **Method:** public third-party sources (DNS via recursive resolver, crt.sh, RDAP); "
-               "no direct connections from this tool to the target's web/app servers  ")
+    if result.data_note:
+        out.append("- **Method:** offline replay of committed fixtures; no network connections at all  ")
+    else:
+        out.append("- **Method:** public third-party sources (DNS via recursive resolver, crt.sh, RDAP); "
+                   "no direct connections from this tool to the target's web/app servers  ")
+    if result.data_note:
+        out.append(f"- **Data:** {result.data_note}  ")
     out.append(f"- **Cache:** {result.cache_hits} hit(s), {result.cache_misses} miss(es)  ")
     out.append(f"- **Links CSV:** `{csv_name}`\n")
 
+    if result.data_note:
+        out.append("> **SYNTHETIC DEMO.** Every name, IP address and registration record in this report comes "
+                   "from committed offline fixtures. The names use reserved or fictional domains and the IPs sit in "
+                   "documentation ranges (RFC 5737 / RFC 3849). Nothing here describes real infrastructure.\n")
     out.append("> **Analyst note.** Every link below is a lead, not a conclusion. "
                "Confidence reflects how well a single observation supports an infrastructure "
                "relationship; it is not an attribution. This tool does not name actors.\n")
