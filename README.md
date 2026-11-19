@@ -60,7 +60,7 @@ output matches the committed sample in [`samples/`](samples/).
 
 ## Setup
 
-You need Python 3.9 or newer (3.10+ recommended). The three dependencies (`dnspython`, `requests`, `tldextract`) are pinned in `requirements.txt`.
+You need Python 3.10 or newer (3.9 may still work but is no longer tested in CI). The three dependencies (`dnspython`, `requests`, `tldextract`) are pinned in `requirements.txt`.
 
 ### Fastest way (no git needed)
 
@@ -417,7 +417,7 @@ Do these by hand after a run to show human quality control over the tool.
 | `tests/` | pytest suite: offline end-to-end run, sample diff, no-network guarantee, `normalise_domain` (`python -m pytest -q`; needs `requirements-dev.txt`). |
 | `examples/offline_demo/` | Synthetic fixtures for `--demo`. |
 | `samples/` | Committed synthetic demo report (Markdown + CSV); CI checks it matches regenerated output. |
-| `.github/workflows/ci.yml` | CI: Python 3.9 and 3.12; pyflakes, self-check, pytest, offline demo, sample diff. |
+| `.github/workflows/ci.yml` | CI: Python 3.10 and 3.12; pyflakes, self-check, pytest, offline demo, sample diff. |
 | `examples/crtsh_sample_ietf.json` | Hand-made crt.sh-format sample (names modelled on ietf.org, IDs made up) used by the self-check. |
 | `examples/rdap_sample/` | Hand-made RDAP responses modelled on public registry records (ietf.org and well-known cloud netblocks), in the `--rdap-dir` layout. |
 | `CHANGELOG.md` | What changed in each version. |

@@ -12,6 +12,8 @@ Housekeeping before making the repository public. No behaviour change.
   committed sample report is regenerated to match.
 - `.gitignore`: also ignore `.env.*`, key files, `secrets/` and saved
   `*.crtsh.json` lookups.
+- CI: test on Python 3.10 and 3.12. GitHub's current `ubuntu-latest` image no
+  longer provides Python 3.9 (end of life), so the 3.9 job could not start.
 
 ## 0.3.2 (2026-09-30)
 
