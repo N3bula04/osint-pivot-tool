@@ -2,11 +2,16 @@
 
 [![CI](https://github.com/N3bula04/osint-pivot-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/N3bula04/osint-pivot-tool/actions/workflows/ci.yml)
 
-OSINT infrastructure pivot tool with evidence-rated links.
+A small command-line tool that maps the public infrastructure around one
+domain and rates how strong each link is. **This is a personal learning
+project**, built to practise Python and passive open-source research
+techniques. It is a hobby project, not a commercial product.
+
+## What it does
 
 Give it one seed domain. It collects public data about that domain from
-DNS (via your recursive resolver), certificate transparency and RDAP,
-pivots one hop to related domains and IPs, and writes:
+DNS (via your recursive resolver), certificate transparency (crt.sh) and
+RDAP, pivots one hop to related domains and IPs, and writes:
 
 - a **Markdown report** you can read and hand to someone else, and
 - a **CSV of links** (`source_entity, related_entity, link_type, evidence,
@@ -19,13 +24,43 @@ infrastructure (CDNs, managed DNS, mail providers, cloud hosting) is flagged
 and downgraded. Sources that fail or return nothing are logged so gaps are
 visible. The tool never attributes activity to a named actor.
 
+## Quick start (no network needed)
+
+```bash
+git clone https://github.com/N3bula04/osint-pivot-tool.git
+cd osint-pivot-tool
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python test_rating.py          # offline self-check
+python pivot.py --demo         # full pipeline on fictional data, writes to reports/
+```
+
+The demo uses only **fictional** names (`example-demo.test` and friends) and
+documentation IP ranges, and it blocks all network access while it runs. The
+output matches the committed sample in [`samples/`](samples/).
+
+## Ethics and responsible use
+
+- **Public data only.** The tool reads public DNS records, public
+  certificate-transparency logs and public registration (RDAP) data. It does
+  not scan ports, connect to the target's web or app servers, log in
+  anywhere or bypass any access control.
+- **Be polite to free services.** crt.sh and RDAP requests are rate-limited,
+  backed off on errors and cached for 24 hours (see
+  [Safety and terms of use](#safety-and-terms-of-use)).
+- **Leads, not conclusions.** Ratings describe how strong the evidence for a
+  link is. They are not proof of ownership or intent, and the tool never
+  attributes activity to a person or group.
+- Only look up domains you have a legitimate reason to research, and follow
+  the terms of the services involved and the law where you are.
+
 **Current version: 0.3.2, Stage 3 (DNS + certificate transparency + RDAP).** This completes the version 1 scope. See `CHANGELOG.md` for what changed.
 
 ---
 
 ## Setup
 
-You need Python 3.9 or newer (3.10+ recommended). The three dependencies (`dnspython`, `requests`, `tldextract`) are pinned in `requirements.txt`.
+You need Python 3.10 or newer (3.9 may still work but is no longer tested in CI). The three dependencies (`dnspython`, `requests`, `tldextract`) are pinned in `requirements.txt`.
 
 ### Fastest way (no git needed)
 
@@ -89,7 +124,7 @@ to open a network connection during the run raises an error. Timestamps are
 pinned, so the output always matches the committed sample in
 [`samples/`](samples/). The fixtures cover a CDN downgrade, a cloud netblock,
 shared and expired certificates, a possible origin IP (Medium), a shared IP
-confirmed by reverse DNS (High), a gov.sg Public Suffix List case, spoofed
+confirmed by reverse DNS (High), a co.uk Public Suffix List case, spoofed
 provider hostnames, and a CSV-injection-looking RDAP value.
 
 To replay your own saved fixtures instead: `python pivot.py SEED --offline DIR
@@ -190,9 +225,10 @@ the JSON once in a browser and feed it to the tool:
 1. Open `https://crt.sh/?q=%25.example.com&output=json` (the `%25` is a URL-encoded `%`). Save the page as `example.com.crtsh.json`.
 2. Run `python pivot.py example.com --ct-file example.com.crtsh.json`.
 
-`examples/crtsh_sample_ietf.json` is a small **synthetic** file in the same
-format, used by the self-check. The certificate IDs in it are made up; do
-not cite them.
+`examples/crtsh_sample_ietf.json` is a small **hand-made** file in the same
+format, used by the self-check. Its host names are modelled on the public
+`ietf.org` domain, but the certificate IDs, dates and serials are made up;
+do not cite them.
 
 ## What Stage 3 adds: registration data via RDAP
 
@@ -227,8 +263,9 @@ Use `--rdap-dir DIR` to run without the network. The tool looks for
 addresses replaced by hyphens (Windows cannot write colons in filenames).
 Save them in a browser from `https://rdap.org/domain/example.com` and
 `https://rdap.org/ip/93.184.216.34`. `examples/rdap_sample/` holds
-**synthetic** files in this format for the self-check; the registrar and
-contacts in them are made up.
+**hand-made** files in this format for the self-check, modelled on public
+registry records for `ietf.org` and well-known cloud netblocks; the registrar
+and contact entries in them are made up.
 
 ## How confidence is rated
 
@@ -380,9 +417,9 @@ Do these by hand after a run to show human quality control over the tool.
 | `tests/` | pytest suite: offline end-to-end run, sample diff, no-network guarantee, `normalise_domain` (`python -m pytest -q`; needs `requirements-dev.txt`). |
 | `examples/offline_demo/` | Synthetic fixtures for `--demo`. |
 | `samples/` | Committed synthetic demo report (Markdown + CSV); CI checks it matches regenerated output. |
-| `.github/workflows/ci.yml` | CI: Python 3.9 and 3.12; pyflakes, self-check, pytest, offline demo, sample diff. |
-| `examples/crtsh_sample_ietf.json` | Synthetic crt.sh output used by the self-check and for offline demos. |
-| `examples/rdap_sample/` | Synthetic RDAP responses in the `--rdap-dir` layout. |
+| `.github/workflows/ci.yml` | CI: Python 3.10 and 3.12; pyflakes, self-check, pytest, offline demo, sample diff. |
+| `examples/crtsh_sample_ietf.json` | Hand-made crt.sh-format sample (names modelled on ietf.org, IDs made up) used by the self-check. |
+| `examples/rdap_sample/` | Hand-made RDAP responses modelled on public registry records (ietf.org and well-known cloud netblocks), in the `--rdap-dir` layout. |
 | `CHANGELOG.md` | What changed in each version. |
 
 ## How this was built

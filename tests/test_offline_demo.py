@@ -72,7 +72,7 @@ def test_demo_exercises_interesting_cases(tmp_path):
     assert origin["confidence"] == "Medium" and "possible_origin_ip" in origin["flags"]
     shared = find(rs, "shared_ip", "partner-demo.test")
     assert shared["confidence"] == "High"
-    # PSL: two gov.sg names stay separate owners (not collapsed into "gov.sg")
+    # PSL: two co.uk names stay separate owners (not collapsed into "co.uk")
     assert find(rs, "ct_shared_certificate", "portal.fictional-partner.co.uk")
     assert find(rs, "ct_shared_certificate", "www.fictional-supplier.co.uk")
     assert rating.registrable_domain("portal.fictional-partner.co.uk") == "fictional-partner.co.uk"
