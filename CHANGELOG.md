@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+Housekeeping before making the repository public. No behaviour change.
+
+- README: personal-project framing, quick start with the offline demo, and an
+  ethics / public-data-only section. Sample files built from public `ietf.org`
+  records are now described as hand-made rather than synthetic.
+- Tests, docs and demo fixtures use fictional `co.uk` names for the Public
+  Suffix List cases instead of real or government-style `.gov.sg` names. The
+  committed sample report is regenerated to match.
+- `.gitignore`: also ignore `.env.*`, key files, `secrets/` and saved
+  `*.crtsh.json` lookups.
+
 ## 0.3.2 (2026-09-30)
 
 CI and a fully offline demo. Rating rules are unchanged apart from the PSL fix below.
