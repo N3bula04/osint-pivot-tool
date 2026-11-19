@@ -89,7 +89,7 @@ to open a network connection during the run raises an error. Timestamps are
 pinned, so the output always matches the committed sample in
 [`samples/`](samples/). The fixtures cover a CDN downgrade, a cloud netblock,
 shared and expired certificates, a possible origin IP (Medium), a shared IP
-confirmed by reverse DNS (High), a gov.sg Public Suffix List case, spoofed
+confirmed by reverse DNS (High), a co.uk Public Suffix List case, spoofed
 provider hostnames, and a CSV-injection-looking RDAP value.
 
 To replay your own saved fixtures instead: `python pivot.py SEED --offline DIR

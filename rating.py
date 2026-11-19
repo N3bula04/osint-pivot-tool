@@ -227,7 +227,7 @@ def _is_ip(text: str) -> bool:
 
 
 def _split_registrable(hostname: str) -> Tuple[str, str]:
-    """Return (label, suffix) for the registrable part, e.g. ('moh', 'gov.sg').
+    """Return (label, suffix) for the registrable part, e.g. ('shop-a', 'co.uk').
 
     Either part may be empty for IPs, bare suffixes or single-label names.
     """
@@ -263,7 +263,7 @@ def registrable_domain(hostname: str) -> str:
 
 
 def registrable_label(hostname: str) -> str:
-    """The name part of the registrable domain: 'moh' for www.shop-a.co.uk."""
+    """The name part of the registrable domain: 'shop-a' for www.shop-a.co.uk."""
     return _split_registrable(hostname)[0]
 
 
