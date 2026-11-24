@@ -24,20 +24,29 @@ infrastructure (CDNs, managed DNS, mail providers, cloud hosting) is flagged
 and downgraded. Sources that fail or return nothing are logged so gaps are
 visible. The tool never attributes activity to a named actor.
 
-## Quick start (no network needed)
+## Quick start
+
+Installing the Python dependencies needs network access once. After setup,
+run the offline demo first, before any live lookup.
 
 ```bash
 git clone https://github.com/N3bula04/osint-pivot-tool.git
 cd osint-pivot-tool
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python test_rating.py          # offline self-check
-python pivot.py --demo         # full pipeline on fictional data, writes to reports/
+pip install -r requirements.txt   # needs network
+python test_rating.py             # offline self-check
+python pivot.py --demo            # first run: full pipeline on fictional data, writes to reports/
 ```
 
 The demo uses only **fictional** names (`example-demo.test` and friends) and
 documentation IP ranges, and it blocks all network access while it runs. The
 output matches the committed sample in [`samples/`](samples/).
+
+When you are ready for a live lookup (this uses the network):
+
+```bash
+python pivot.py example.com
+```
 
 ## Ethics and responsible use
 
@@ -155,12 +164,12 @@ Useful options:
 | `--resolver 1.1.1.1` | Send DNS queries to a specific recursive resolver instead of the system default. |
 | `--timeout 10` | Per-query timeout in seconds (default 5). |
 | `--no-ptr` | Skip reverse-DNS lookups on discovered IPs. |
-| `--skip-ct` | Skip certificate transparency entirely (DNS-only run). |
+| `--skip-ct` | Skip certificate-transparency lookups only. DNS and RDAP still use the network unless you also skip or replace them. This is not a fully offline run. |
 | `--ct-file FILE.json` | Read crt.sh results from a JSON file you saved, instead of the network. |
 | `--ct-timeout 90` | crt.sh request timeout in seconds (default 60; crt.sh is often slow). |
 | `--max-resolve 50` | How many discovered names to resolve for the IP pivot (default 30; 0 disables). |
 | `--skip-rdap` | Skip RDAP registration lookups. |
-| `--rdap-dir DIR` | Read RDAP JSON from saved files instead of the network (see below). |
+| `--rdap-dir DIR` | Read RDAP JSON from saved files instead of querying RDAP over the network. DNS and certificate lookups still use the network unless you also skip or replace them, or use `--demo` / `--offline`. |
 | `--rdap-timeout 45` | RDAP request timeout in seconds (default 30). |
 | `-o DIR` | Write reports somewhere other than `reports/`. |
 
@@ -258,7 +267,10 @@ status codes, DNSSEC, and the registry's nameservers.
 
 ### Working from saved RDAP files
 
-Use `--rdap-dir DIR` to run without the network. The tool looks for
+Use `--rdap-dir DIR` to substitute saved RDAP responses for live RDAP
+queries. This only replaces RDAP; DNS and certificate lookups still use the
+network unless you also skip or replace them, or run `--demo` / `--offline`.
+The tool looks for
 `DIR/domain_<seed>.json` and `DIR/ip_<ip>.json`, with colons in IPv6
 addresses replaced by hyphens (Windows cannot write colons in filenames).
 Save them in a browser from `https://rdap.org/domain/example.com` and
