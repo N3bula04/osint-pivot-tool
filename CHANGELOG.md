@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-Housekeeping before making the repository public. No behaviour change.
+Markdown reports now open with a generated Assessment that ranks priority
+links, gives one alternative explanation, and highlights the biggest source gap.
 
 - README: personal-project framing, quick start with the offline demo, and an
-  ethics / public-data-only section. Sample files built from public `ietf.org`
-  records are now described as hand-made rather than synthetic.
+  ethics / public-data-only section. Older hand-made samples are distinguished
+  from the synthetic offline demo.
 - Tests, docs and demo fixtures use fictional `co.uk` names for the Public
   Suffix List cases instead of real or government-style `.gov.sg` names. The
   committed sample report is regenerated to match.

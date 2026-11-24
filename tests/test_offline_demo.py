@@ -92,7 +92,14 @@ def test_report_is_labelled_synthetic(tmp_path):
     text = md.read_text(encoding="utf-8")
     assert "SYNTHETIC DEMO" in text
     assert "no network connections at all" in text
-    assert "## Links (sorted by confidence)" in text
+    assert (
+        text.index("SYNTHETIC DEMO") < text.index("Analyst note")
+        < text.index("## Assessment") < text.index("## Summary")
+        < text.index("## Links (sorted by confidence)")
+    )
+    assessment = text.split("## Assessment", 1)[1].split("## Summary", 1)[0]
+    assert "partner-demo.test" in assessment
+    assert "Biggest source gap" in assessment
     assert "## Collection log" in text
 
 
@@ -127,6 +134,7 @@ def test_offline_mode_makes_no_network_calls(tmp_path, monkeypatch):
 
 
 def test_network_guard_blocks_requests_socket_and_dns(tmp_path):
+    original_socket = socket.socket
     with offline.offline_session(offline.DEMO_DIR):
         with pytest.raises(offline.NetworkBlockedError):
             requests.get("https://example.com/", timeout=1)
@@ -136,9 +144,7 @@ def test_network_guard_blocks_requests_socket_and_dns(tmp_path):
             socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         with pytest.raises(offline.NetworkBlockedError):
             collectors.crtsh_fetch(collectors.Cache(tmp_path, enabled=False), "example.com")
-    # Everything is restored afterwards.
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.close()
+    assert socket.socket is original_socket
     assert rating.shared_cdn_provider("203.0.113.140") is None
 
 

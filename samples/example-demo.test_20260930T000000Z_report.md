@@ -12,6 +12,20 @@
 
 > **Analyst note.** Every link below is a lead, not a conclusion. Confidence reflects how well a single observation supports an infrastructure relationship; it is not an attribution. This tool does not name actors.
 
+## Assessment
+
+This lead summary draws on the collected links and collection log. Use it to guide verification without drawing conclusions or assigning responsibility.
+
+**Priority leads**
+
+1. `partner-demo.test` from `example-demo.test` (**High**, `ct_shared_certificate`) — Both names sit on the same certificate; the requester proved control of both at issuance (CA domain validation) (also observed via `shared_ip`).
+2. `192.0.2.0/26` from `192.0.2.10` (**High**, `rdap_netblock`) — Netblock holder name matches the seed's registrant/name; the IP space appears dedicated to the same organisation.
+3. `192.0.2.25` from `mx1.example-demo.test` (**High**, `dns_a`) — A host under the seed's own domain resolves to a non-CDN IP the seed itself does not use, and PTR/RDAP ties that IP to the seed.
+
+**Alternative explanation:** `partner-demo.test` may be a customer or vendor using the same infrastructure, so the overlap could reflect a service relationship.
+
+**Biggest source gap:** DNS query `198.51.100.50 PTR` returned `nxdomain` — `name does not exist`. This lookup would help check the possible origin IP. Collection logged 0 failed and 14 no-data queries.
+
 ## Summary
 
 | Metric | Value |

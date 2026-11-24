@@ -13,7 +13,9 @@ Give it one seed domain. It collects public data about that domain from
 DNS (via your recursive resolver), certificate transparency (crt.sh) and
 RDAP, pivots one hop to related domains and IPs, and writes:
 
-- a **Markdown report** you can read and hand to someone else, and
+- a **Markdown report** that opens with a generated Assessment covering priority
+  links, one alternative explanation, and the biggest source gap before the
+  full evidence tables, and
 - a **CSV of links** (`source_entity, related_entity, link_type, evidence,
   data_source, timestamp, confidence, confidence_reason, flags`) you can filter
   in a spreadsheet.
