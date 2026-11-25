@@ -3,6 +3,7 @@
 import csv
 import pathlib
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from typing import List
 
@@ -24,7 +25,10 @@ def _md_escape(text: str) -> str:
     Pipes would split the cell, newlines would end the row, and a backtick
     would close the code span early; backticks become a plain apostrophe.
     """
-    return str(text).replace("|", "\\|").replace("\r", " ").replace("\n", " ").replace("`", "'")
+    return (
+        str(text).replace("&", "&amp;").replace("<", "&lt;")
+        .replace("|", "\\|").replace("\r", " ").replace("\n", " ").replace("`", "'")
+    )
 
 
 _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -33,12 +37,17 @@ _CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 def _csv_safe(value) -> str:
     """Neutralise spreadsheet formula injection (CSV injection).
 
-    A cell starting with = + - @ (or tab/CR) is treated as a formula by Excel,
-    LibreOffice and Google Sheets. Evidence text comes from DNS/CT/RDAP data an
-    adversary can control, so such cells are prefixed with an apostrophe.
+    Check for formula prefixes after leading whitespace and control characters.
+    Tabs and carriage returns are themselves risky prefixes, so check for them
+    before skipping whitespace and controls.
     """
     text = str(value)
-    return "'" + text if text.startswith(_CSV_FORMULA_PREFIXES) else text
+    for char in text:
+        if char in _CSV_FORMULA_PREFIXES:
+            return "'" + text
+        if not char.isspace() and unicodedata.category(char) != "Cc":
+            break
+    return text
 
 
 def _sorted_links(links: List[Link]) -> List[Link]:

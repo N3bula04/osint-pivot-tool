@@ -5,6 +5,10 @@
 Markdown reports now open with a generated Assessment that ranks priority
 links, gives one alternative explanation, and highlights the biggest source gap.
 
+- Reports escape `<` and `&` in Markdown (so hostile HTML tags cannot run) and guard CSV cells
+  against formula prefixes hidden behind whitespace or control characters.
+- CI pins GitHub Actions to full commit SHAs, disables persisted checkout
+  credentials, and enables weekly Dependabot updates for pip and GitHub Actions.
 - README: personal-project framing, quick start with the offline demo, and an
   ethics / public-data-only section. Older hand-made samples are distinguished
   from the synthetic offline demo.

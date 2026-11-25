@@ -227,7 +227,12 @@ results.append(check("CSV '=' escaped", _csv_safe("=HYPERLINK(\"http://x\")"), "
 results.append(check("CSV '+' escaped", _csv_safe("+1"), "'+1"))
 results.append(check("CSV '-' escaped", _csv_safe("-2+3"), "'-2+3"))
 results.append(check("CSV '@' escaped", _csv_safe("@SUM(A1)"), "'@SUM(A1)"))
+results.append(check("CSV formula after spaces escaped", _csv_safe("  =1"), "'  =1"))
+results.append(check("CSV formula after spaces and tabs escaped", _csv_safe(" \t+1"), "' \t+1"))
+results.append(check("CSV formula after controls escaped", _csv_safe("\x00\x7f -1"), "'\x00\x7f -1"))
+results.append(check("CSV carriage return prefix escaped", _csv_safe(" \rtext"), "' \rtext"))
 results.append(check("CSV normal cell untouched", _csv_safe("example.com"), "example.com"))
+results.append(check("CSV normal cell keeps spaces", _csv_safe("  example.com"), "  example.com"))
 rr = RunResult(seed="example.com", started="2026-01-01T00:00:00+00:00")
 rr.links.append(Link("example.com", "=cmd|'/c calc'!A1", "rdap_registrant_org", "@evil", "RDAP", "t"))
 rate_all(rr.links, "example.com")
@@ -237,6 +242,7 @@ import csv as _csv
 row = list(_csv.reader(csv_path.open(encoding="utf-8")))[1]
 results.append(check("CSV file cells escaped", (row[1], row[3]), ("'=cmd|'/c calc'!A1", "'@evil")))
 results.append(check("MD backtick escaped", _md_escape("a`b|c\nd"), "a'b\\|c d"))
+results.append(check("MD tags and ampersand escaped", _md_escape("<a&b>"), "&lt;a&amp;b>"))
 results.append(check("error text truncated to 200", len(truncate("x" * 1000)), 200))
 from models import LogEntry
 rr.log.append(LogEntry("RDAP", "rdap ip 1.2.3.4", "error", "SSLError " * 100, "t"))
